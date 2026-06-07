@@ -1,161 +1,117 @@
 <template>
-  <div class="page-content fade-in">
-    <!-- Hero 搜索区域 -->
-    <div class="mb-8">
-      <div class="text-center mb-6">
-        <h1 class="text-3xl font-bold mb-2" style="color: var(--color-primary)">
-          发现你的下一站旅行
-        </h1>
-        <p class="text-base" style="color: var(--color-text-muted)">
-          基于智能推荐算法，为你精选热门景点和校园
-        </p>
+  <div class="recommend-page fade-in">
+    <section class="recommend-hero">
+      <div class="hero-copy">
+        <p class="editorial-kicker">Curated routes and places</p>
+        <h1 class="editorial-heading">发现你的下一站旅行</h1>
+        <p>用更像旅行杂志的方式浏览景点、校园和城市目的地，同时保留排序、搜索和算法推荐能力。</p>
       </div>
-
-      <div class="flex justify-center mb-4">
-        <div class="flex items-center w-full max-w-xl bg-white rounded-2xl shadow-md overflow-hidden"
-             style="border: 2px solid var(--color-primary-lightest)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-               fill="none" stroke="var(--color-text-muted)" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" class="ml-4 shrink-0">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-          </svg>
+      <div class="search-panel">
+        <div class="search-box">
+          <Search :size="20" />
           <input
             v-model="searchKeyword"
             type="text"
             placeholder="搜索景点名称、城市、类别..."
-            class="flex-1 px-3 py-3.5 text-sm outline-none bg-transparent"
             @keyup.enter="handleSearch"
           />
+          <button @click="handleSearch">搜索</button>
+        </div>
+        <div class="quick-tags">
           <button
-            class="px-6 py-3.5 text-white text-sm font-medium transition-colors cursor-pointer"
-            style="background: var(--color-primary)"
-            @click="handleSearch"
+            v-for="tag in quickTags"
+            :key="tag.value"
+            :class="{ active: activeCategory === tag.value }"
+            @click="selectTag(tag.value)"
           >
-            搜索
+            {{ tag.label }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="featuredSpot" class="lead-feature">
+      <article
+        class="lead-card"
+        :style="{ '--visual-bg': getSpotVisual(featuredSpot, 0).background }"
+        @click="showDetail(featuredSpot)"
+      >
+        <div class="lead-image"></div>
+        <div class="lead-content">
+          <span>{{ featuredSpot.city }} / {{ featuredSpot.category || featuredSpot.type }}</span>
+          <h2 class="editorial-heading">{{ featuredSpot.name }}</h2>
+          <p>{{ featuredSpot.description }}</p>
+        </div>
+      </article>
+      <aside class="lead-aside">
+        <p class="editorial-kicker">Why it leads</p>
+        <h3>热度 {{ formatHeat(featuredSpot.popularity) }} · 评分 {{ featuredSpot.rating?.toFixed(1) }}</h3>
+        <p>推荐结果按热度、评分和兴趣权重排列。你可以切换类别或排序，快速形成一组可展示的目的地专题。</p>
+      </aside>
+    </section>
+
+    <section class="results-section">
+      <div class="section-bar">
+        <div>
+          <p class="editorial-kicker">{{ isSearchMode ? 'Search result' : 'Popular picks' }}</p>
+          <h2 class="editorial-heading">{{ isSearchMode ? '搜索结果' : '热门推荐' }}</h2>
+        </div>
+        <div class="sort-tabs">
+          <button
+            v-for="s in sortOptions"
+            :key="s.value"
+            :class="{ active: sortBy === s.value }"
+            @click="sortBy = s.value; loadSpots()"
+          >
+            {{ s.label }}
           </button>
         </div>
       </div>
 
-      <!-- 快捷标签 -->
-      <div class="flex justify-center gap-2 flex-wrap">
-        <button
-          v-for="tag in quickTags"
-          :key="tag.value"
-          class="px-4 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer"
-          :class="activeCategory === tag.value ? 'tag-active' : 'tag-default'"
-          @click="selectTag(tag.value)"
-        >
-          {{ tag.label }}
-        </button>
-      </div>
-    </div>
-
-    <!-- 排序栏 -->
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-bold flex items-center gap-2" style="color: var(--color-text-primary)">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-             fill="none" stroke="var(--color-primary)" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>
-        <span v-if="isSearchMode">搜索结果</span>
-        <span v-else>热门推荐</span>
-        <span class="text-xs font-normal" style="color: var(--color-text-muted)">
-          共 {{ spots.length }} 个
-        </span>
-      </h2>
-      <div class="flex items-center gap-1 bg-white rounded-lg p-0.5 shadow-sm">
-        <button
-          v-for="s in sortOptions"
-          :key="s.value"
-          class="px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer"
-          :class="sortBy === s.value ? 'sort-active' : 'sort-default'"
-          @click="sortBy = s.value; loadSpots()"
-        >
-          {{ s.label }}
-        </button>
-      </div>
-    </div>
-
-    <!-- 卡片网格 -->
-    <div v-if="!loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      <div
-        v-for="(spot, idx) in spots"
-        :key="spot.id"
-        class="card overflow-hidden cursor-pointer group"
-        @click="showDetail(spot)"
-      >
-        <!-- 图片 -->
-        <div class="h-44 relative overflow-hidden">
-          <img
-            :src="spot.image_url || `https://placehold.co/400x260/${placeholderColors[idx % placeholderColors.length]}/ffffff?text=${encodeURIComponent(spot.name.slice(0, 4))}`"
-            :alt="spot.name"
-            class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-            loading="lazy"
-          />
-          <div class="absolute top-3 left-3 flex gap-1.5">
-            <span class="tag tag-primary">{{ spot.category || spot.type }}</span>
-            <span v-if="spot.ticket_price === 0" class="tag" style="background: #E8F5E9; color: #2E7D32">免费</span>
-          </div>
-          <div class="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2 py-1 rounded-lg backdrop-blur-sm">
-            {{ spot.city }}
-          </div>
+      <div v-if="loading" class="spot-grid">
+        <div v-for="i in 9" :key="i" class="spot-card skeleton-card">
+          <div class="skeleton visual"></div>
+          <div class="skeleton line wide"></div>
+          <div class="skeleton line"></div>
         </div>
-        <!-- 信息 -->
-        <div class="p-4">
-          <h3 class="font-semibold text-base mb-1 truncate" style="color: var(--color-text-primary)">
-            {{ spot.name }}
-          </h3>
-          <p class="text-xs mb-3 line-clamp-2" style="color: var(--color-text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-            {{ spot.description || '暂无描述' }}
-          </p>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1">
-              <!-- 评分星星 -->
-              <div class="flex items-center gap-0.5" style="color: #FFC107">
-                <svg v-for="i in 5" :key="i" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                     viewBox="0 0 24 24" :fill="i <= Math.round(spot.rating) ? '#FFC107' : '#E0E0E0'"
-                     stroke="none">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-              </div>
-              <span class="text-xs font-medium" style="color: var(--color-text-secondary)">
-                {{ spot.rating?.toFixed(1) }}
-              </span>
-              <span class="text-xs" style="color: var(--color-text-muted)">({{ spot.rating_count }})</span>
+      </div>
+
+      <div v-else-if="spots.length > 0" class="spot-grid">
+        <article
+          v-for="(spot, idx) in displaySpots"
+          :key="spot.id"
+          class="spot-card"
+          :style="{ '--visual-bg': getSpotVisual(spot, idx + 1).background }"
+          @click="showDetail(spot)"
+        >
+          <div class="spot-visual">
+            <img v-if="spot.image_url || spot.image" :src="spot.image_url || spot.image" :alt="spot.name" />
+            <div v-else class="generated-visual">
+              <span>{{ spot.city }}</span>
             </div>
-            <span class="text-xs font-medium" style="color: var(--color-primary)">
-              热度 {{ spot.popularity }}
-            </span>
           </div>
-        </div>
+          <div class="spot-body">
+            <div class="spot-meta">
+              <span>{{ spot.category || spot.type }}</span>
+              <span>{{ spot.city }}</span>
+            </div>
+            <h3>{{ spot.name }}</h3>
+            <p>{{ spot.description || '暂无描述' }}</p>
+            <div class="spot-stats">
+              <span>★ {{ spot.rating?.toFixed(1) }} ({{ spot.rating_count }})</span>
+              <strong>热度 {{ formatHeat(spot.popularity) }}</strong>
+            </div>
+          </div>
+        </article>
       </div>
-    </div>
 
-    <!-- 加载骨架 -->
-    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-      <div v-for="i in 8" :key="i" class="card overflow-hidden">
-        <div class="skeleton h-44" style="background: linear-gradient(135deg, #e8f5e9, #f1f8e9)"></div>
-        <div class="p-4">
-          <div class="skeleton h-5 w-3/4 mb-2 rounded"></div>
-          <div class="skeleton h-3 w-full mb-1.5 rounded"></div>
-          <div class="skeleton h-3 w-2/3 rounded"></div>
-        </div>
+      <div v-else class="empty-state">
+        <Search :size="56" />
+        <p>未找到相关景点，换个关键词或类别试试</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 空状态 -->
-    <div v-if="!loading && spots.length === 0" class="empty-state">
-      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24"
-           fill="none" stroke="currentColor" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-      </svg>
-      <p class="text-sm mt-3">未找到相关景点，换个关键词试试</p>
-    </div>
-
-    <!-- 分页 -->
-    <div v-if="total > pageSize" class="flex justify-center mt-8">
+    <div v-if="total > pageSize" class="pagination-row">
       <el-pagination
         v-model:current-page="currentPage"
         :page-size="pageSize"
@@ -166,54 +122,30 @@
       />
     </div>
 
-    <!-- 详情弹窗 -->
-    <el-dialog
-      v-model="detailVisible"
-      :title="selectedSpot?.name"
-      width="600px"
-      destroy-on-close
-    >
-      <div v-if="selectedSpot">
-        <div class="mb-4 rounded-xl overflow-hidden">
-          <img
-            :src="selectedSpot.image_url || `https://placehold.co/600x300/${placeholderColors[0]}/ffffff?text=${encodeURIComponent(selectedSpot.name)}`"
-            :alt="selectedSpot.name"
-            class="w-full h-56 object-cover"
-          />
+    <el-dialog v-model="detailVisible" :title="selectedSpot?.name" width="680px" destroy-on-close>
+      <div v-if="selectedSpot" class="detail-dialog">
+        <div class="detail-visual" :style="{ '--visual-bg': getSpotVisual(selectedSpot, 0).background }">
+          <img v-if="selectedSpot.image_url || selectedSpot.image" :src="selectedSpot.image_url || selectedSpot.image" :alt="selectedSpot.name" />
         </div>
-        <div class="grid grid-cols-2 gap-3 mb-4">
-          <div class="bg-gray-50 rounded-lg p-3">
-            <div class="text-xs" style="color: var(--color-text-muted)">评分</div>
-            <div class="text-lg font-bold" style="color: #FFC107">{{ selectedSpot.rating?.toFixed(1) }}</div>
-          </div>
-          <div class="bg-gray-50 rounded-lg p-3">
-            <div class="text-xs" style="color: var(--color-text-muted)">热度</div>
-            <div class="text-lg font-bold" style="color: var(--color-primary)">{{ selectedSpot.popularity }}</div>
-          </div>
-          <div class="bg-gray-50 rounded-lg p-3">
-            <div class="text-xs" style="color: var(--color-text-muted)">门票</div>
-            <div class="text-lg font-bold">{{ selectedSpot.ticket_price === 0 ? '免费' : `¥${selectedSpot.ticket_price}` }}</div>
-          </div>
-          <div class="bg-gray-50 rounded-lg p-3">
-            <div class="text-xs" style="color: var(--color-text-muted)">开放时间</div>
-            <div class="text-sm font-medium">{{ selectedSpot.open_time || '全天' }}</div>
-          </div>
+        <div class="detail-grid">
+          <div><span>评分</span><strong>{{ selectedSpot.rating?.toFixed(1) }}</strong></div>
+          <div><span>热度</span><strong>{{ formatHeat(selectedSpot.popularity) }}</strong></div>
+          <div><span>门票</span><strong>{{ selectedSpot.ticket_price === 0 ? '免费' : selectedSpot.ticket_price }}</strong></div>
+          <div><span>开放</span><strong>{{ selectedSpot.open_time || '全天' }}</strong></div>
         </div>
-        <p class="text-sm leading-relaxed" style="color: var(--color-text-secondary)">
-          {{ selectedSpot.description || '暂无详细描述' }}
-        </p>
-        <div class="mt-3 text-xs" style="color: var(--color-text-muted)">
-          📍 {{ selectedSpot.address }}，{{ selectedSpot.city }}
-        </div>
+        <p>{{ selectedSpot.description || '暂无详细描述' }}</p>
+        <small>{{ selectedSpot.address }}，{{ selectedSpot.city }}</small>
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { getRecommendations, searchSpots, getSpotList } from '@/api/spot'
+import { computed, onMounted, ref } from 'vue'
+import { Search } from 'lucide-vue-next'
+import { getSpotList, searchSpots } from '@/api/spot'
 import type { Spot } from '@/types'
+import { formatHeat, getSpotVisual } from '@/utils/visualAssets'
 
 const spots = ref<Spot[]>([])
 const loading = ref(false)
@@ -243,16 +175,14 @@ const sortOptions = [
   { label: '综合', value: 'interest' },
 ]
 
-const placeholderColors = [
-  '2D6A4F', '40916C', '2A9D8F', '457B9D',
-  '264653', '6B705C', '588157', '3A5A40',
-]
+const featuredSpot = computed(() => spots.value[0])
+const displaySpots = computed(() => spots.value.slice(featuredSpot.value ? 1 : 0))
 
 async function loadSpots() {
   loading.value = true
   try {
-    if (isSearchMode.value && searchKeyword.value) {
-      const res = await searchSpots({ keyword: searchKeyword.value, limit: 50 })
+    if (isSearchMode.value && searchKeyword.value.trim()) {
+      const res = await searchSpots({ keyword: searchKeyword.value.trim(), limit: 50 })
       spots.value = res.data || []
       total.value = spots.value.length
     } else {
@@ -270,8 +200,8 @@ async function loadSpots() {
       spots.value = data?.items || data || []
       total.value = data?.total || (res as any).total || spots.value.length
     }
-  } catch (e) {
-    console.error('加载景点失败:', e)
+  } catch (error) {
+    console.error('加载景点失败:', error)
     spots.value = []
   } finally {
     loading.value = false
@@ -279,11 +209,7 @@ async function loadSpots() {
 }
 
 function handleSearch() {
-  if (searchKeyword.value.trim()) {
-    isSearchMode.value = true
-  } else {
-    isSearchMode.value = false
-  }
+  isSearchMode.value = Boolean(searchKeyword.value.trim())
   currentPage.value = 1
   loadSpots()
 }
@@ -301,33 +227,377 @@ function showDetail(spot: Spot) {
   detailVisible.value = true
 }
 
-onMounted(() => {
-  loadSpots()
-})
+onMounted(loadSpots)
 </script>
 
 <style scoped>
-.tag-active {
-  background: var(--color-primary);
-  color: white;
+.recommend-page {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 34px 28px 72px;
 }
-.tag-default {
-  background: white;
+
+.recommend-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.75fr);
+  gap: 44px;
+  align-items: end;
+  min-height: 380px;
+  padding: 48px 0 34px;
+}
+
+.hero-copy h1 {
+  margin: 14px 0 16px;
+  font-size: clamp(48px, 6vw, 82px);
+  line-height: 0.96;
+}
+
+.hero-copy p:last-child {
+  max-width: 620px;
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-primary-lightest);
+  font-size: 17px;
 }
-.tag-default:hover {
-  border-color: var(--color-primary-light);
-  color: var(--color-primary);
+
+.search-panel {
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+  padding: 18px;
 }
-.sort-active {
-  background: var(--color-primary-bg);
-  color: var(--color-primary);
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-rule);
+  padding-bottom: 16px;
 }
-.sort-default {
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-ink);
+}
+
+.search-box button,
+.quick-tags button,
+.sort-tabs button {
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.search-box button {
+  padding: 10px 16px;
+  color: var(--color-surface);
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  font-weight: 900;
+}
+
+.quick-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.quick-tags button {
+  padding: 7px 11px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.quick-tags button.active,
+.sort-tabs button.active {
+  color: var(--color-surface);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.lead-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  margin-bottom: 48px;
+}
+
+.lead-card {
+  min-height: 420px;
+  position: relative;
+  display: flex;
+  align-items: end;
+  overflow: hidden;
+  border: 1px solid var(--color-rule);
+  background: var(--visual-bg);
+  color: var(--color-surface);
+  cursor: pointer;
+}
+
+.lead-image,
+.generated-visual::before,
+.detail-visual::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    radial-gradient(circle at 26% 22%, rgba(255, 253, 247, 0.28), transparent 13%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.72), transparent 64%);
+}
+
+.lead-content {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  padding: 32px;
+}
+
+.lead-content span,
+.spot-meta span {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lead-content h2 {
+  margin: 10px 0 12px;
+  font-size: clamp(42px, 5vw, 68px);
+  line-height: 0.98;
+}
+
+.lead-content p {
+  color: rgba(255, 253, 247, 0.78);
+  font-size: 16px;
+}
+
+.lead-aside {
+  padding: 22px;
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+}
+
+.lead-aside h3 {
+  margin: 12px 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.lead-aside p {
+  color: var(--color-text-secondary);
+}
+
+.section-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding-top: 28px;
+  border-top: 1px solid var(--color-rule);
+}
+
+.section-bar h2 {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.sort-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.sort-tabs button {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.spot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.spot-card {
+  overflow: hidden;
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.spot-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.spot-visual {
+  height: 230px;
+  position: relative;
+  overflow: hidden;
+  background: var(--visual-bg);
+}
+
+.spot-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.generated-visual {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: end;
+  padding: 18px;
+  color: rgba(255, 253, 247, 0.78);
+}
+
+.generated-visual span {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.spot-body {
+  padding: 18px;
+}
+
+.spot-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-editorial-red);
+}
+
+.spot-body h3 {
+  margin: 8px 0 6px;
+  font-size: 22px;
+  line-height: 1.18;
+}
+
+.spot-body p {
+  min-height: 44px;
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.spot-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-rule);
   color: var(--color-text-muted);
+  font-size: 13px;
 }
-.sort-default:hover {
+
+.spot-stats strong {
   color: var(--color-primary);
+}
+
+.pagination-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 30px;
+}
+
+.detail-visual {
+  height: 280px;
+  position: relative;
+  overflow: hidden;
+  background: var(--visual-bg);
+}
+
+.detail-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  margin: 18px 0;
+  background: var(--color-rule);
+}
+
+.detail-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  background: var(--color-surface);
+}
+
+.detail-grid span,
+.detail-dialog small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.detail-grid strong {
+  font-size: 18px;
+}
+
+.detail-dialog p {
+  color: var(--color-text-secondary);
+  line-height: 1.8;
+}
+
+.skeleton-card {
+  padding: 14px;
+}
+
+.skeleton-card .visual {
+  height: 220px;
+  margin-bottom: 16px;
+}
+
+.skeleton-card .line {
+  height: 14px;
+  width: 65%;
+  margin-top: 10px;
+}
+
+.skeleton-card .line.wide {
+  width: 86%;
+}
+
+@media (max-width: 980px) {
+  .recommend-page {
+    padding: 24px 18px 56px;
+  }
+
+  .recommend-hero,
+  .lead-feature,
+  .spot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lead-card {
+    min-height: 440px;
+  }
+
+  .section-bar {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

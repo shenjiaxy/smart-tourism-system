@@ -3,7 +3,9 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-rou
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/overview',
+    name: 'Home',
+    component: () => import('@/views/HomeView.vue'),
+    meta: { title: '首页', icon: 'Home' },
   },
   {
     path: '/diaries',
@@ -33,7 +35,7 @@ const routes: RouteRecordRaw[] = [
     path: '/map',
     name: 'Map',
     component: () => import('@/views/MapView.vue'),
-    meta: { title: '地图导航', icon: 'Map' },
+    meta: { title: '路线规划', icon: 'Map' },
   },
   {
     path: '/facility',
@@ -63,7 +65,6 @@ const router = createRouter({
   },
 })
 
-// 路由守卫：更新页面标题
 router.beforeEach((to) => {
   const title = (to.meta.title as string) || '智能旅游系统'
   document.title = `${title} - 智能旅游系统`
