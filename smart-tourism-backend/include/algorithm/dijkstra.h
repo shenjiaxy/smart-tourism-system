@@ -73,7 +73,8 @@ struct DijkstraResult {
         int len = 0;
         int cur = target;
         while (cur != source) {
-            if (cur == -1) return -1;  // 路径断裂
+            if (cur == -1) return -1;          // 路径断裂
+            if (len > node_count) return -1;   // prev 数组出现环路，防止无限循环
             cur = prev[cur];
             len++;
         }
