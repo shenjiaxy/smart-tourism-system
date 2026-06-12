@@ -46,7 +46,8 @@ private:
     void expand() {
         int new_cap = capacity_ == 0 ? 16 : capacity_ * 2;
         T* new_data = new T[new_cap];
-        for (int i = 0; i < size_; i++) {
+        // 堆使用1-based索引，有效元素在 data_[1..size_]，必须复制到 size_（含）
+        for (int i = 0; i <= size_; i++) {
             new_data[i] = data_[i];
         }
         delete[] data_;

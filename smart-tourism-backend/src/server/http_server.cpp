@@ -60,34 +60,7 @@ void HttpServer::register_common_routes() {
         res.set_content(Response::ok("Server is running").dump(), "application/json");
     });
 
-    // 调试端点：直接查数据库验证数据
-    server_.Get("/api/debug/db", [](const httplib::Request&, httplib::Response& res) {
-        json debug;
-        auto& db = Database::get();
-        int spot_count = 0;
-        db.query("SELECT COUNT(*) FROM scenic_spots", [&spot_count](int cols, char** vals, char**) {
-            spot_count = std::stoi(vals[0]);
-            return false;
-        });
-        debug["spot_count"] = spot_count;
-
-        json spots = json::array();
-        db.query("SELECT id, name, type, popularity, rating FROM scenic_spots ORDER BY popularity DESC LIMIT 5",
-            [&spots](int cols, char** vals, char**) {
-                json s;
-                s["id"] = std::stoi(vals[0]);
-                s["name"] = vals[1] ? vals[1] : "";
-                s["type"] = vals[2] ? vals[2] : "";
-                s["popularity"] = std::stoi(vals[3]);
-                s["rating"] = std::stod(vals[4]);
-                spots.push_back(s);
-                return true;
-            });
-        debug["top_spots"] = spots;
-        res.set_content(Response::ok(debug).dump(), "application/json");
-    });
-
-    server_.Get("/api", [](const httplib::Request&, httplib::Response& res) {
+    server_.Get("/api",[](const httplib::Request&, httplib::Response& res) {
         json info;
         info["name"] = "Smart Tourism System API";
         info["version"] = "1.0.0";

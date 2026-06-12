@@ -101,7 +101,6 @@ private:
      * @brief 强制刷新索引（新增/修改/删除日记后调用）
      */
     static void refresh_index() {
-        static bool initialized = false;
         std::lock_guard<std::mutex> lock(index_mutex());
         // 通过重建来刷新
         try {
@@ -347,14 +346,18 @@ public:
             }
 
             if (mode == "exact") {
-                // HashMap 精确查找
-                std::lock_guard<std::mutex> lock(index_mutex());
-                auto& title_map = get_title_map();
-                const int* diary_id = title_map.find(keyword);
+                // HashMap 精确查找：持锁仅做索引查询，释放锁后再查数据库
+                int found_id = 0;
+                {
+                    std::lock_guard<std::mutex> lock(index_mutex());
+                    auto& title_map = get_title_map();
+                    const int* diary_id = title_map.find(keyword);
+                    if (diary_id) found_id = *diary_id;
+                }
 
                 json items = json::array();
-                if (diary_id) {
-                    json diary = repository::DiaryRepo::get_by_id(*diary_id);
+                if (found_id > 0) {
+                    json diary = repository::DiaryRepo::get_by_id(found_id);
                     if (diary.contains("id")) {
                         items.push_back(diary);
                     }
@@ -365,13 +368,15 @@ public:
                 result["mode"] = "exact";
 
             } else {
-                // 倒排索引全文检索
-                std::lock_guard<std::mutex> lock(index_mutex());
-                auto& index = get_index();
+                // 倒排索引全文检索：持锁仅做索引查询，释放锁后再查数据库
                 std::unique_ptr<int[]> doc_ids(new int[limit]);
                 std::unique_ptr<double[]> scores(new double[limit]);
-
-                int match_count = index.search(keyword, doc_ids.get(), scores.get(), limit);
+                int match_count;
+                {
+                    std::lock_guard<std::mutex> lock(index_mutex());
+                    auto& index = get_index();
+                    match_count = index.search(keyword, doc_ids.get(), scores.get(), limit);
+                }
 
                 json items = json::array();
                 for (int i = 0; i < match_count; i++) {
@@ -501,11 +506,12 @@ public:
                 return result;
             }
 
-            // base64 解码为字节
-            int decoded_len = static_cast<int>(base64_data.size() / 4 * 3);
-            if (base64_data.size() >= 1 && base64_data[base64_data.size() - 1] == '=') decoded_len--;
-            if (base64_data.size() >= 2 && base64_data[base64_data.size() - 2] == '=') decoded_len--;
-
+            // base64 解码为字节：分配最大可能长度，避免因格式异常导致缓冲区不足
+            int decoded_len = static_cast<int>((base64_data.size() + 3) / 4 * 3);
+            if (decoded_len <= 0) {
+                result["error"] = "Base64 数据无效";
+                return result;
+            }
             std::unique_ptr<unsigned char[]> decoded(new unsigned char[decoded_len]);
             int actual_len = base64_decode(base64_data, decoded.get(), decoded_len);
 

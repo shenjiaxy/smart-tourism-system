@@ -269,6 +269,9 @@ public:
                      | (static_cast<int>(compressed[2]) << 16)
                      | (static_cast<int>(compressed[3]) << 24);
 
+        // 校验原始长度合理性，防止畸形数据导致分配超大内存
+        if (orig_len <= 0 || orig_len > 256 * 1024 * 1024) return 0;
+
         // 读取频率表
         int freq[256];
         const unsigned char* header = compressed + 4;

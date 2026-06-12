@@ -108,9 +108,7 @@ public:
         for (int i = 0; i < key_count; i++) {
             DijkstraResult dijk = Dijkstra::run(graph, key_nodes[i], strategy);
             for (int j = 0; j < key_count; j++) {
-                dist_matrix[i * key_count + j] = dijk.dist[j >= 0 ? j : 0];
-                // 实际上 dijk.dist 的索引是节点索引，不是 key 索引
-                // 需要用 key_nodes[j] 作为节点索引
+                // dijk.dist 以图节点索引寻址，必须用 key_nodes[j] 取对应节点的距离
                 dist_matrix[i * key_count + j] = dijk.dist[key_nodes[j]];
             }
         }
@@ -140,13 +138,15 @@ public:
         }
 
         // ---- 2-opt 局部优化 ----
+        // 传终点在 key 数组中的索引（key_count-1），而非图节点编号
         two_opt_optimize(order, waypoint_count, dist_matrix, key_count,
-                         key_nodes[key_count - 1], max_2opt_iter);
+                         key_count - 1, max_2opt_iter);
 
         // ---- 拼接完整路径 ----
         // 路径：start -> order[0] -> order[1] -> ... -> order[n-1] -> end
         // 每段用 Dijkstra 获取实际节点路径
-        result.path = new int[graph.node_count() * waypoint_count + waypoint_count + 10];  // 足够大
+        // 共 waypoint_count+1 段，每段最多 node_count 个节点
+        result.path = new int[graph.node_count() * (waypoint_count + 1) + 10];
         result.path_length = 0;
         result.total_dist = 0;
 
