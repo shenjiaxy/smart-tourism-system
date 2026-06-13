@@ -8,6 +8,7 @@
 #include "service/facility_service.h"
 #include "service/diary_service.h"
 #include "service/food_service.h"
+#include "service/aigc_service.h"
 #include <iostream>
 
 using json = nlohmann::json;
@@ -25,6 +26,7 @@ void HttpServer::register_routes() {
     register_facility_routes();
     register_diary_routes();
     register_food_routes();
+    register_aigc_routes();
     std::cout << "[Server] All routes registered." << std::endl;
 }
 
@@ -70,7 +72,8 @@ void HttpServer::register_common_routes() {
             {{"name", "路线规划"}, {"prefix", "/api/route"}},
             {{"name", "场所查询"}, {"prefix", "/api/facilities"}},
             {{"name", "旅游日记"}, {"prefix", "/api/diaries"}},
-            {{"name", "美食推荐"}, {"prefix", "/api/foods"}}
+            {{"name", "美食推荐"}, {"prefix", "/api/foods"}},
+            {{"name", "AIGC图生视频"}, {"prefix", "/api/aigc"}}
         };
         res.set_content(Response::ok(info).dump(), "application/json");
     });
@@ -676,6 +679,34 @@ void HttpServer::register_food_routes() {
             resp["page"] = page;
             resp["page_size"] = page_size;
             res.set_content(resp.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+}
+
+// ============================================================
+// AIGC 图生视频路由
+// ============================================================
+void HttpServer::register_aigc_routes() {
+    // POST /api/aigc/generate-video
+    server_.Post("/api/aigc/generate-video", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            json result = service::AigcService::generate_video(body);
+            json resp;
+            if (result.contains("error")) {
+                resp["code"] = 400;
+                resp["message"] = result["error"];
+                resp["data"] = nullptr;
+            } else {
+                resp["code"] = 200;
+                resp["message"] = "success";
+                resp["data"] = result;
+            }
+            res.set_content(resp.dump(), "application/json");
+        } catch (const json::parse_error&) {
+            res.set_content(Response::bad_request("Invalid JSON").dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
