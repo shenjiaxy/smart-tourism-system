@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(sed 's/ VALUES.*//')",
-      "Bash(sed 's/area_id, //')"
-    ]
-  }
-}
