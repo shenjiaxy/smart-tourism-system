@@ -227,6 +227,38 @@
                  class="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:border-green-500"
                  style="border-color: var(--color-primary-lightest)" />
         </div>
+        <div>
+          <label class="block text-xs font-medium mb-1" style="color: var(--color-text-secondary)">图片链接</label>
+          <div class="media-input-row">
+            <input v-model="diaryForm.imageUrl" type="url" placeholder="https://..."
+                   @keyup.enter="addImageUrl" />
+            <button title="添加图片" @click="addImageUrl"><Plus :size="17" /></button>
+            <button title="选择本地图片" @click="imageFileInput?.click()"><Upload :size="17" /></button>
+            <input ref="imageFileInput" class="media-file-input" type="file" accept="image/*" multiple @change="handleImageFiles" />
+          </div>
+          <div v-if="diaryForm.images.length" class="media-preview-grid">
+            <div v-for="(image, index) in diaryForm.images" :key="image" class="media-preview-item">
+              <img :src="image" alt="日记图片预览" />
+              <button title="移除图片" @click="diaryForm.images.splice(index, 1)"><X :size="14" /></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1" style="color: var(--color-text-secondary)">视频链接</label>
+          <div class="media-input-row">
+            <input v-model="diaryForm.videoUrl" type="url" placeholder="https://...mp4"
+                   @keyup.enter="addVideoUrl" />
+            <button title="添加视频" @click="addVideoUrl"><Plus :size="17" /></button>
+            <button title="选择本地视频" @click="videoFileInput?.click()"><Upload :size="17" /></button>
+            <input ref="videoFileInput" class="media-file-input" type="file" accept="video/*" @change="handleVideoFile" />
+          </div>
+          <div v-if="diaryForm.videos.length" class="video-link-list">
+            <span v-for="(video, index) in diaryForm.videos" :key="video">
+              <Video :size="14" />{{ mediaDisplayName(video, index) }}
+              <button title="移除视频" @click="diaryForm.videos.splice(index, 1)"><X :size="13" /></button>
+            </span>
+          </div>
+        </div>
       </div>
       <template #footer>
         <div class="flex gap-3">
@@ -286,6 +318,10 @@
                class="w-32 h-24 rounded-lg object-cover shrink-0" />
         </div>
 
+        <div v-if="currentDiary.videos?.length" class="diary-video-list">
+          <video v-for="video in currentDiary.videos" :key="video" :src="video" controls preload="metadata" />
+        </div>
+
         <!-- 标签 -->
         <div v-if="currentDiary.tags?.length" class="flex gap-1 mb-4 flex-wrap">
           <span v-for="tag in currentDiary.tags" :key="tag"
@@ -297,6 +333,14 @@
 
         <!-- 操作按钮 -->
         <div class="flex gap-2 pt-4 border-t" style="border-color: var(--color-primary-lightest)">
+          <button
+            class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all"
+            style="background: #E8F1FF; color: #185ABC"
+            @click="startTravelAnimation"
+          >
+            <Sparkles :size="15" />
+            生成旅游动画
+          </button>
           <button
             class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all"
             style="background: #F3E5F5; color: #7B1FA2"
@@ -346,12 +390,41 @@
         </div>
       </div>
     </el-dialog>
+
+    <div v-if="animationVisible && currentDiary" class="travel-animation-overlay">
+      <button class="animation-close" title="关闭动画" @click="closeTravelAnimation"><X :size="22" /></button>
+      <div class="animation-badge"><Sparkles :size="14" /> 本地智能生成演示</div>
+      <div class="travel-animation-frame">
+        <div class="animation-fallback">
+          <div class="fallback-landmark"><ImageIcon :size="72" /></div>
+        </div>
+        <div
+          v-for="(image, index) in animationImages"
+          :key="`${image}-${index}`"
+          class="animation-slide"
+          :class="{ active: animationSlide === index }"
+          :style="{ backgroundImage: `url(${image})` }"
+        />
+        <div class="animation-shade" />
+        <div class="animation-route-line">
+          <i v-for="index in 5" :key="index" :style="{ animationDelay: `${index * 0.18}s` }" />
+        </div>
+        <div class="animation-copy">
+          <span>{{ currentDiary.destination || '旅途影像' }}</span>
+          <h2>{{ currentDiary.title }}</h2>
+          <p>{{ currentDiary.content.slice(0, 72) }}</p>
+        </div>
+        <div class="animation-progress"><i :style="{ width: `${animationProgress * 100}%` }" /></div>
+      </div>
+      <button class="animation-replay" @click="startTravelAnimation"><RotateCcw :size="17" />重新生成</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { Image as ImageIcon, Plus, RotateCcw, Sparkles, Upload, Video, X } from 'lucide-vue-next'
 import {
   getDiaryList, getDiaryDetail, createDiary, updateDiary, deleteDiary,
   searchDiaries, compressDiary, decompressDiary, rateDiary,
@@ -377,6 +450,14 @@ const editingDiary = ref<Diary | null>(null)
 const currentDiary = ref<Diary | null>(null)
 const userRating = ref(0)
 const savingDiary = ref(false)
+const imageFileInput = ref<HTMLInputElement | null>(null)
+const videoFileInput = ref<HTMLInputElement | null>(null)
+const animationVisible = ref(false)
+const animationProgress = ref(0)
+const animationSlide = ref(0)
+let animationFrameId = 0
+let animationStartedAt = 0
+const animationDuration = 8000
 
 // 压缩
 const compressResult = ref<{ original_size: number; compressed_size: number; compression_ratio: number } | null>(null)
@@ -392,7 +473,13 @@ const diaryForm = reactive({
   content: '',
   destination: '',
   tags: '',
+  imageUrl: '',
+  videoUrl: '',
+  images: [] as string[],
+  videos: [] as string[],
 })
+
+const animationImages = computed(() => currentDiary.value?.images?.filter(Boolean).slice(0, 6) || [])
 
 function parseTags(value: unknown): string[] {
   if (Array.isArray(value)) return value
@@ -406,12 +493,23 @@ function parseTags(value: unknown): string[] {
   return value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
 }
 
+function parseMediaList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean)
+  if (typeof value !== 'string' || !value.trim()) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []
+  } catch {
+    return value.split(/[,\n]/).map(item => item.trim()).filter(Boolean)
+  }
+}
+
 function normalizeDiary(item: any): Diary {
   return {
     ...item,
     tags: parseTags(item.tags),
-    images: Array.isArray(item.images) ? item.images : [],
-    videos: Array.isArray(item.videos) ? item.videos : [],
+    images: parseMediaList(item.images),
+    videos: parseMediaList(item.videos),
     is_compressed: Boolean(item.is_compressed),
   }
 }
@@ -461,8 +559,8 @@ async function handleSearch() {
       diary_id: item.diary_id ?? item.id,
       score: item.score ?? item.relevance_score ?? 1,
       tags: Array.isArray(item.tags) ? item.tags : parseTags(item.tags),
-      images: Array.isArray(item.images) ? item.images : [],
-      videos: Array.isArray(item.videos) ? item.videos : [],
+      images: parseMediaList(item.images),
+      videos: parseMediaList(item.videos),
     }))
   } catch (e) {
     console.error('搜索日记失败:', e)
@@ -475,6 +573,10 @@ function openCreateDialog() {
   diaryForm.content = ''
   diaryForm.destination = ''
   diaryForm.tags = ''
+  diaryForm.imageUrl = ''
+  diaryForm.videoUrl = ''
+  diaryForm.images = []
+  diaryForm.videos = []
   createDialogVisible.value = true
 }
 
@@ -485,7 +587,76 @@ function openEditDialog(diary: Diary) {
   diaryForm.content = diary.content
   diaryForm.destination = diary.destination
   diaryForm.tags = Array.isArray(diary.tags) ? diary.tags.join(', ') : ''
+  diaryForm.imageUrl = ''
+  diaryForm.videoUrl = ''
+  diaryForm.images = [...(diary.images || [])]
+  diaryForm.videos = [...(diary.videos || [])]
   createDialogVisible.value = true
+}
+
+function isMediaUrl(value: string) {
+  return /^(https?:\/\/|data:image\/|\/)/i.test(value.trim())
+}
+
+function addImageUrl() {
+  const value = diaryForm.imageUrl.trim()
+  if (!value) return
+  if (!isMediaUrl(value)) {
+    ElMessage.warning('请输入有效的图片链接')
+    return
+  }
+  if (!diaryForm.images.includes(value)) diaryForm.images.push(value)
+  diaryForm.imageUrl = ''
+}
+
+function addVideoUrl() {
+  const value = diaryForm.videoUrl.trim()
+  if (!value) return
+  if (!isMediaUrl(value)) {
+    ElMessage.warning('请输入有效的视频链接')
+    return
+  }
+  if (!diaryForm.videos.includes(value)) diaryForm.videos.push(value)
+  diaryForm.videoUrl = ''
+}
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handleImageFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  for (const file of files) {
+    if (file.size > 3 * 1024 * 1024) {
+      ElMessage.warning(`${file.name} 超过 3MB，已跳过`)
+      continue
+    }
+    diaryForm.images.push(await readAsDataUrl(file))
+  }
+  input.value = ''
+}
+
+async function handleVideoFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('视频超过 10MB，请选择较短的演示片段')
+    input.value = ''
+    return
+  }
+  diaryForm.videos.push(await readAsDataUrl(file))
+  input.value = ''
+}
+
+function mediaDisplayName(value: string, index: number) {
+  return value.startsWith('data:') ? `本地视频 ${index + 1}` : value
 }
 
 async function handleSaveDiary() {
@@ -507,6 +678,8 @@ async function handleSaveDiary() {
         content: diaryForm.content,
         destination: diaryForm.destination,
         tags,
+        images: diaryForm.images,
+        videos: diaryForm.videos,
       })
       ElMessage.success('日记已更新')
     } else {
@@ -516,6 +689,8 @@ async function handleSaveDiary() {
         content: diaryForm.content,
         destination: diaryForm.destination,
         tags: JSON.stringify(tags),
+        images: diaryForm.images,
+        videos: diaryForm.videos,
       })
       ElMessage.success('日记已发布')
     }
@@ -595,8 +770,40 @@ async function handleDecompress() {
   }
 }
 
+function startTravelAnimation() {
+  if (!currentDiary.value) return
+  animationVisible.value = true
+  animationProgress.value = 0
+  animationSlide.value = 0
+  animationStartedAt = performance.now()
+  if (animationFrameId) cancelAnimationFrame(animationFrameId)
+  animationFrameId = requestAnimationFrame(updateTravelAnimation)
+}
+
+function updateTravelAnimation(now: number) {
+  const elapsed = now - animationStartedAt
+  animationProgress.value = Math.min(1, elapsed / animationDuration)
+  const count = Math.max(1, animationImages.value.length)
+  animationSlide.value = Math.min(count - 1, Math.floor(animationProgress.value * count))
+  if (animationProgress.value < 1 && animationVisible.value) {
+    animationFrameId = requestAnimationFrame(updateTravelAnimation)
+  } else {
+    animationFrameId = 0
+  }
+}
+
+function closeTravelAnimation() {
+  animationVisible.value = false
+  if (animationFrameId) cancelAnimationFrame(animationFrameId)
+  animationFrameId = 0
+}
+
 onMounted(() => {
   loadDiaries()
+})
+
+onUnmounted(() => {
+  if (animationFrameId) cancelAnimationFrame(animationFrameId)
 })
 </script>
 
@@ -610,5 +817,152 @@ onMounted(() => {
 }
 .sort-default:hover {
   color: var(--color-primary);
+}
+
+.media-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px 42px;
+  gap: 8px;
+}
+
+.media-file-input {
+  display: none;
+}
+
+.media-input-row input {
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--color-primary-lightest);
+  border-radius: 6px;
+  outline: none;
+}
+
+.media-input-row button,
+.media-preview-item button,
+.video-link-list button {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.media-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.media-preview-item {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--color-rule);
+  border-radius: 6px;
+}
+
+.media-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+.media-preview-item button { position: absolute; top: 4px; right: 4px; width: 25px; height: 25px; border-radius: 50%; }
+
+.video-link-list { display: grid; gap: 6px; margin-top: 9px; }
+.video-link-list span { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; padding: 7px 9px; border: 1px solid var(--color-rule); font-size: 11px; overflow: hidden; }
+.video-link-list button { width: 24px; height: 24px; }
+
+.diary-video-list { display: grid; gap: 10px; margin-bottom: 16px; }
+.diary-video-list video { width: 100%; max-height: 320px; background: #111; border-radius: 6px; }
+
+.travel-animation-overlay {
+  position: fixed;
+  z-index: 4000;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 16px;
+  padding: 28px;
+  background: rgba(10, 18, 14, .94);
+}
+
+.travel-animation-frame {
+  position: relative;
+  width: min(1040px, calc(100vw - 56px));
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.22);
+  background: #274537;
+  box-shadow: 0 24px 70px rgba(0,0,0,.42);
+}
+
+.animation-slide,
+.animation-fallback,
+.animation-shade {
+  position: absolute;
+  inset: 0;
+}
+
+.animation-slide {
+  opacity: 0;
+  background-position: center;
+  background-size: cover;
+  transform: scale(1.12) translate3d(2%, 0, 0);
+  transition: opacity .8s ease;
+}
+
+.animation-slide.active {
+  opacity: 1;
+  animation: travel-pan 3s ease-out both;
+}
+
+.animation-fallback {
+  display: grid;
+  place-content: center;
+  color: rgba(255,255,255,.68);
+  background-color: #416b56;
+  background-image: linear-gradient(rgba(255,255,255,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.fallback-landmark { animation: fallback-float 2.4s ease-in-out infinite alternate; }
+.animation-shade { background: linear-gradient(0deg, rgba(7,16,11,.9), rgba(7,16,11,.08) 72%); }
+
+.animation-copy {
+  position: absolute;
+  left: 6%;
+  right: 8%;
+  bottom: 12%;
+  color: white;
+}
+
+.animation-copy span { font-size: 13px; font-weight: 800; letter-spacing: .08em; }
+.animation-copy h2 { max-width: 780px; margin: 8px 0; font-size: clamp(30px, 5vw, 64px); line-height: 1.05; }
+.animation-copy p { max-width: 650px; color: rgba(255,255,255,.82); font-size: 15px; }
+
+.animation-route-line {
+  position: absolute;
+  top: 15%;
+  right: 8%;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.animation-route-line::before { content: ''; position: absolute; left: 6px; right: 6px; height: 2px; background: rgba(255,255,255,.55); }
+.animation-route-line i { position: relative; width: 11px; height: 11px; border: 2px solid white; border-radius: 50%; background: #d85b3f; animation: route-pulse 1s ease-out both; }
+
+.animation-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: rgba(255,255,255,.22); }
+.animation-progress i { display: block; height: 100%; background: #e8b04c; transition: width .08s linear; }
+.animation-badge { justify-self: start; display: flex; align-items: center; gap: 7px; color: rgba(255,255,255,.82); font-size: 12px; font-weight: 800; }
+.animation-close { position: fixed; top: 24px; right: 28px; display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(255,255,255,.3); border-radius: 50%; color: white; background: rgba(0,0,0,.25); cursor: pointer; }
+.animation-replay { justify-self: end; display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 16px; border: 1px solid rgba(255,255,255,.32); color: white; background: transparent; font-weight: 800; cursor: pointer; }
+
+@keyframes travel-pan { from { transform: scale(1.12) translate3d(2%, 0, 0); } to { transform: scale(1.02) translate3d(-1%, -1%, 0); } }
+@keyframes route-pulse { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+@keyframes fallback-float { from { transform: translateY(6px); } to { transform: translateY(-6px); } }
+
+@media (max-width: 720px) {
+  .media-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .travel-animation-overlay { padding: 16px; }
+  .travel-animation-frame { width: calc(100vw - 32px); }
+  .animation-copy p { display: none; }
 }
 </style>

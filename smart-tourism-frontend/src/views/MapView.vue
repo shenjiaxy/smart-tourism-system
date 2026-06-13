@@ -1,5 +1,11 @@
 <template>
-  <div class="map-page fade-in">
+  <div class="route-workspace fade-in">
+    <div class="route-mode-switch" aria-label="导航模式">
+      <button :class="{ active: navigationMode === 'outdoor' }" @click="navigationMode = 'outdoor'">室外导航</button>
+      <button :class="{ active: navigationMode === 'indoor' }" @click="navigationMode = 'indoor'">室内导航</button>
+    </div>
+
+    <div v-if="navigationMode === 'outdoor'" class="map-page">
     <aside class="planner-panel">
       <div class="panel-head">
         <p class="editorial-kicker">Route Atelier</p>
@@ -25,6 +31,21 @@
             @click="strategy = s.value"
           >
             {{ s.label }}
+          </button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>出行方式</label>
+        <div class="transport-options">
+          <button
+            v-for="option in transportOptions"
+            :key="option.value"
+            :class="{ active: transportChoice === option.value }"
+            :disabled="strategy === 'mixed' && option.value !== 'mixed'"
+            @click="transportChoice = option.value"
+          >
+            {{ option.label }}
           </button>
         </div>
       </div>
@@ -79,6 +100,11 @@
           <div><span>距离</span><strong>{{ routeDistanceLabel }}</strong></div>
           <div><span>时间</span><strong>{{ routeTime }}min</strong></div>
         </div>
+        <div v-if="routeTransfers.length" class="transfer-list">
+          <span v-for="transfer in routeTransfers" :key="`${transfer.node_id}-${transfer.to_transport}`">
+            {{ transfer.node_name }}：{{ transportLabel(transfer.from_transport) }}转{{ transportLabel(transfer.to_transport) }}
+          </span>
+        </div>
         <p class="route-names">{{ routeNodeNames.join(' -> ') }}</p>
       </div>
     </aside>
@@ -114,14 +140,22 @@
         <p>地图将展示建筑轮廓、道路层级、步道、标注和路径动画。</p>
       </div>
     </section>
+    </div>
+
+    <IndoorNavigationPanel
+      v-else
+      :areas="spotOptions"
+      :initial-area-id="selectedAreaId"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Map as MapIcon } from 'lucide-vue-next'
 import { getGraphData, getSpotOptions } from '@/api/spot'
 import { planMultiRoute, planSingleRoute } from '@/api/route'
+import IndoorNavigationPanel from '@/components/map/IndoorNavigationPanel.vue'
 import type { MapNode, MultiRouteResult, Road, SingleRouteResult, Spot } from '@/types'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -141,6 +175,8 @@ const dropdownNodeId = ref<number | string>('')
 const strategy = ref<'distance' | 'time' | 'mixed'>('distance')
 const routeResult = ref<SingleRouteResult | MultiRouteResult | null>(null)
 const loading = ref(false)
+const navigationMode = ref<'outdoor' | 'indoor'>('outdoor')
+const transportChoice = ref<'walk' | 'bike' | 'shuttle' | 'mixed'>('walk')
 
 const view = {
   zoom: 1,
@@ -170,6 +206,37 @@ const strategies = [
 const selectedAreaName = computed(() =>
   spotOptions.value.find(s => String(s.id) === String(selectedAreaId.value))?.name || ''
 )
+
+const selectedArea = computed(() =>
+  spotOptions.value.find(s => String(s.id) === String(selectedAreaId.value))
+)
+
+const transportOptions = computed(() => {
+  const vehicle = selectedArea.value?.type === 'campus'
+    ? { label: '自行车', value: 'bike' as const }
+    : { label: '电瓶车', value: 'shuttle' as const }
+  return [
+    { label: '步行', value: 'walk' as const },
+    vehicle,
+    { label: '混合', value: 'mixed' as const },
+  ]
+})
+
+const transportMask = computed(() => {
+  if (transportChoice.value === 'walk') return 0x1
+  if (transportChoice.value === 'bike') return 0x2
+  if (transportChoice.value === 'shuttle') return 0x4
+  return selectedArea.value?.type === 'campus' ? 0x3 : 0x5
+})
+
+watch(strategy, value => {
+  if (value === 'mixed') transportChoice.value = 'mixed'
+})
+
+watch(selectedAreaId, () => {
+  if (transportChoice.value === 'bike' && selectedArea.value?.type !== 'campus') transportChoice.value = 'walk'
+  if (transportChoice.value === 'shuttle' && selectedArea.value?.type === 'campus') transportChoice.value = 'walk'
+})
 
 type DemoPoint = [number, number]
 type DemoBuilding = {
@@ -358,6 +425,18 @@ const routeTime = computed(() => {
 })
 
 const routePathIds = computed(() => routeResult.value?.path || [])
+const routeTransportModes = computed(() =>
+  (routeResult.value as SingleRouteResult | null)?.transport_modes || []
+)
+const routeTransfers = computed(() =>
+  (routeResult.value as SingleRouteResult | null)?.transfers || []
+)
+
+function transportLabel(mode: number) {
+  if (mode === 1) return '自行车'
+  if (mode === 2) return '电瓶车'
+  return '步行'
+}
 
 function resizeCanvas() {
   const canvas = canvasRef.value
@@ -498,24 +577,33 @@ function drawRoute() {
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.strokeStyle = '#1a73e8'
   ctx.lineWidth = 7
-  ctx.shadowColor = 'rgba(26, 115, 232, 0.28)'
-  ctx.shadowBlur = 10
-  ctx.beginPath()
-  ctx.moveTo(points[0][0], points[0][1])
+  ctx.shadowColor = 'rgba(26, 115, 232, 0.22)'
+  ctx.shadowBlur = 8
+  const modeColors = ['#1a73e8', '#18864b', '#d97706']
   for (let i = 0; i < totalSegments; i++) {
     const [x1, y1] = points[i]
     const [x2, y2] = points[i + 1]
-    if (i + 1 <= visible) {
-      ctx.lineTo(x2, y2)
-    } else if (i < visible) {
-      const t = visible - i
-      ctx.lineTo(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
-      break
+    const mode = routeTransportModes.value[i] ?? 0
+    if (x1 === x2 && y1 === y2) {
+      if (i <= visible) {
+        ctx.strokeStyle = modeColors[routeTransportModes.value[i + 1] ?? mode] || modeColors[0]
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(x1, y1, 12, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.lineWidth = 7
+      }
+      continue
     }
+    if (i >= visible) break
+    const t = Math.min(1, visible - i)
+    ctx.strokeStyle = modeColors[mode] || modeColors[0]
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+    ctx.stroke()
   }
-  ctx.stroke()
   ctx.restore()
 
   if (progress < 1) requestDraw()
@@ -1189,6 +1277,7 @@ async function planRoute() {
         to_node: endNode.value!.id,
         waypoints: waypoints.value.map(w => w.id),
         strategy: strategy.value,
+        transport: transportMask.value,
       })
       routeResult.value = res.data
     } else {
@@ -1197,6 +1286,7 @@ async function planRoute() {
         from_node: startNode.value!.id,
         to_node: endNode.value!.id,
         strategy: strategy.value,
+        transport: transportMask.value,
       })
       routeResult.value = res.data
     }
@@ -1288,7 +1378,14 @@ function handleResize() {
 }
 
 onMounted(async () => {
-  seedDemoGraph()
+  try {
+    const res = await getSpotOptions()
+    spotOptions.value = res.data || []
+    await loadDefaultGraphArea()
+  } catch (error) {
+    console.error('加载区域列表失败:', error)
+  }
+  await nextTick()
   resizeCanvas()
   requestDraw()
   window.addEventListener('resize', handleResize, { passive: true })
@@ -1301,12 +1398,39 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.route-workspace {
+  min-height: calc(100vh - 72px);
+}
+
+.route-mode-switch {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 16px 24px 12px;
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+}
+
+.route-mode-switch button {
+  min-width: 128px;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.route-mode-switch button.active {
+  color: white;
+  background: var(--color-primary);
+}
+
 .map-page {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
   gap: 22px;
-  height: calc(100vh - 72px);
-  padding: 24px;
+  height: calc(100vh - 132px);
+  padding: 0 24px 24px;
 }
 
 .planner-panel,
@@ -1386,6 +1510,33 @@ onUnmounted(() => {
 .segmented button.active {
   color: var(--color-surface);
   background: var(--color-primary);
+}
+
+.transport-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.transport-options button {
+  min-height: 38px;
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.transport-options button.active {
+  color: white;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.transport-options button:disabled:not(.active) {
+  opacity: .35;
+  cursor: not-allowed;
 }
 
 .steps {
@@ -1488,6 +1639,15 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.transfer-list {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+  color: #9a5a00;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .map-stage {
   position: relative;
   overflow: hidden;
@@ -1566,8 +1726,10 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
     height: auto;
     min-height: calc(100vh - 72px);
-    padding: 16px;
+    padding: 0 16px 16px;
   }
+
+  .route-mode-switch { margin: 12px 16px; }
 
   .planner-panel {
     max-height: none;

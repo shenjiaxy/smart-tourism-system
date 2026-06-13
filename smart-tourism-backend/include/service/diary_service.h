@@ -225,6 +225,10 @@ public:
                 return result;
             }
             result = repository::DiaryRepo::get_by_id(id);
+            if (result.is_object() && !result.empty() && !result.contains("error")) {
+                repository::DiaryRepo::increment_popularity(id);
+                result["popularity"] = result.value("popularity", 0) + 1;
+            }
         } catch (const std::exception& e) {
             result["error"] = std::string("获取日记详情异常: ") + e.what();
         }

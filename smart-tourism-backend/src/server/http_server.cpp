@@ -4,6 +4,7 @@
 #include "repository/spot_repo.h"
 #include "service/recommend_service.h"
 #include "service/route_service.h"
+#include "service/indoor_route_service.h"
 #include "service/facility_service.h"
 #include "service/diary_service.h"
 #include "service/food_service.h"
@@ -247,22 +248,15 @@ void HttpServer::register_spot_routes() {
             int page = page_str.empty() ? 1 : std::stoi(page_str);
             std::string size_str = req.get_param_value("page_size");
             int page_size = size_str.empty() ? 20 : std::stoi(size_str);
-            json result = service::RecommendService::get_recommendations(
-                sort_by, page_size, -1, type, category);
-            // 同样解包：data=数组，total=数字
-            json resp;
-            if (result.contains("error")) {
-                resp["code"] = 500;
-                resp["message"] = result["error"];
-                resp["data"] = json::array();
-                resp["total"] = 0;
-            } else {
-                resp["code"] = 200;
-                resp["message"] = "success";
-                resp["data"] = result.value("data", json::array());
-                resp["total"] = result.value("total", 0);
-            }
-            res.set_content(resp.dump(), "application/json");
+            if (page < 1) page = 1;
+            if (page_size < 1) page_size = 20;
+            if (page_size > 100) page_size = 100;
+
+            json items = repository::SpotRepo::get_all(
+                page, page_size, sort_by, order, type, category);
+            int total = repository::SpotRepo::count(type, category);
+            res.set_content(Response::paginated(items, total, page, page_size).dump(),
+                            "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
@@ -305,6 +299,40 @@ void HttpServer::register_route_routes() {
             int area_id = std::stoi(req.matches[1]);
             json result = service::RouteService::get_graph_data(area_id);
             res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+
+    server_.Get("/api/route/indoor/buildings", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string area = req.get_param_value("area_id");
+            if (area.empty()) {
+                res.set_content(Response::bad_request("area_id is required").dump(), "application/json");
+                return;
+            }
+            json result = service::IndoorRouteService::get_buildings(std::stoi(area));
+            res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+
+    server_.Get(R"(/api/route/indoor/graph/(\d+))", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json result = service::IndoorRouteService::get_graph(std::stoi(req.matches[1]));
+            res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+
+    server_.Post("/api/route/indoor", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json result = service::IndoorRouteService::plan(json::parse(req.body));
+            res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const json::parse_error&) {
+            res.set_content(Response::bad_request("Invalid JSON").dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
@@ -357,22 +385,19 @@ void HttpServer::register_diary_routes() {
             std::string dest_str = req.get_param_value("destination_id");
             int dest_id = dest_str.empty() ? -1 : std::stoi(dest_str);
 
+            if (page < 1) page = 1;
+            if (page_size < 1) page_size = 20;
+            if (page_size > 100) page_size = 100;
+
             json result = service::DiaryService::get_diaries(page, page_size, sort_by, order, dest_id);
-            json resp;
-            resp["code"] = 200;
-            resp["message"] = "success";
-            // result 可能是数组（正常）或含 error 的对象
             if (result.is_array()) {
-                resp["data"] = result;
-                resp["total"] = static_cast<int>(result.size());
-                resp["page"] = page;
-                resp["page_size"] = page_size;
+                int total = repository::DiaryRepo::count(dest_id);
+                res.set_content(Response::paginated(result, total, page, page_size).dump(),
+                                "application/json");
             } else {
-                resp["data"] = json::array();
-                resp["total"] = 0;
-                if (result.contains("error")) resp["message"] = result["error"];
+                std::string message = result.value("error", std::string("Failed to load diaries"));
+                res.set_content(Response::server_error(message).dump(), "application/json");
             }
-            res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
