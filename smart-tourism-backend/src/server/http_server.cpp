@@ -597,7 +597,7 @@ void HttpServer::register_diary_routes() {
 // 美食推荐路由
 // ============================================================
 void HttpServer::register_food_routes() {
-    // GET /api/foods/recommend?area_id=1&sort_by=rating&limit=10&cuisine=川菜
+    // GET /api/foods/recommend?area_id=1&sort_by=rating&limit=10&cuisine=川菜&ref_x=500&ref_y=350
     server_.Get("/api/foods/recommend", [](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string area_id_str = req.get_param_value("area_id");
@@ -611,21 +611,28 @@ void HttpServer::register_food_routes() {
             std::string cuisine = req.get_param_value("cuisine");
             std::string limit_str = req.get_param_value("limit");
             int limit = limit_str.empty() ? 10 : std::stoi(limit_str);
+            double ref_x = -1, ref_y = -1;
+            std::string rx = req.get_param_value("ref_x");
+            std::string ry = req.get_param_value("ref_y");
+            if (!rx.empty()) ref_x = std::stod(rx);
+            if (!ry.empty()) ref_y = std::stod(ry);
 
-            json result = service::FoodService::get_recommendations(area_id, limit, sort_by, cuisine);
+            json result = service::FoodService::get_recommendations(area_id, limit, sort_by, cuisine, ref_x, ref_y);
             json resp;
             resp["code"] = 200;
             resp["message"] = "success";
             resp["data"] = result.value("data", json::array());
             resp["total"] = result.value("total", 0);
             resp["limit"] = result.value("limit", 0);
+            if (result.contains("ref_x")) resp["ref_x"] = result["ref_x"];
+            if (result.contains("ref_y")) resp["ref_y"] = result["ref_y"];
             res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
     });
 
-    // GET /api/foods/search?area_id=1&keyword=宫保鸡丁&limit=20
+    // GET /api/foods/search?area_id=1&keyword=宫保鸡丁&limit=20&sort_by=similarity&ref_x=500&ref_y=350
     server_.Get("/api/foods/search", [](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string area_id_str = req.get_param_value("area_id");
@@ -637,14 +644,22 @@ void HttpServer::register_food_routes() {
             std::string keyword = req.get_param_value("keyword");
             std::string limit_str = req.get_param_value("limit");
             int limit = limit_str.empty() ? 20 : std::stoi(limit_str);
+            std::string sort_by = req.get_param_value("sort_by");
+            if (sort_by.empty()) sort_by = "similarity";
+            double ref_x = -1, ref_y = -1;
+            std::string rx = req.get_param_value("ref_x");
+            std::string ry = req.get_param_value("ref_y");
+            if (!rx.empty()) ref_x = std::stod(rx);
+            if (!ry.empty()) ref_y = std::stod(ry);
 
-            json result = service::FoodService::search_foods(area_id, keyword, limit);
+            json result = service::FoodService::search_foods(area_id, keyword, limit, sort_by, ref_x, ref_y);
             json resp;
             resp["code"] = 200;
             resp["message"] = "success";
             resp["data"] = result.value("data", json::array());
             resp["total"] = result.value("total", 0);
             resp["mode"] = result.value("mode", "");
+            resp["sort_by"] = result.value("sort_by", sort_by);
             res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");

@@ -75,11 +75,7 @@ public:
             auto res = cli.Post(endpoint, headers, req_body.dump(), "application/json");
 
             if (!res) {
-                auto err = cli.get_openssl_verify_result();
-                if (err != 0) {
-                    return {{"error", "SSL 证书验证失败"}};
-                }
-                return {{"error", "连接 API 服务器失败，请检查 API 地址"}};
+                return {{"error", "连接 API 服务器失败，请检查 API 地址和网络"}};
             }
 
             if (res->status < 200 || res->status >= 300) {

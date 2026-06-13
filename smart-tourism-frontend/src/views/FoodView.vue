@@ -51,6 +51,21 @@
         >
           搜索
         </button>
+
+        <div class="flex items-center gap-2 ml-auto">
+          <span class="text-xs" style="color: var(--color-text-muted)">排序:</span>
+          <select
+            v-model="sortBy"
+            class="px-3 py-2 rounded-lg text-xs border outline-none focus:border-green-500"
+            style="border-color: var(--color-primary-lightest)"
+            @change="onSortChange"
+          >
+            <option value="rating">评价最高</option>
+            <option value="popularity">热度最高</option>
+            <option value="distance">距离最近</option>
+            <option value="price_asc">价格最低</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -149,7 +164,12 @@
                   <span>{{ result.food.restaurant }}</span>
                 </div>
                 <div class="flex items-center justify-between text-xs">
-                  <span style="color: #FFC107">★ {{ result.food.rating?.toFixed(1) }}</span>
+                  <div class="flex items-center gap-2">
+                    <span style="color: #FFC107">★ {{ result.food.rating?.toFixed(1) }}</span>
+                    <span v-if="sortBy === 'distance' && (result.food as any).distance != null" class="font-medium" style="color: #E65100">
+                      📍 {{ (((result.food as any).distance) * 1.2).toFixed(0) }}m
+                    </span>
+                  </div>
                   <span style="color: var(--color-text-secondary)">¥{{ result.food.price }}</span>
                 </div>
               </div>
@@ -167,7 +187,7 @@
              stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
         </svg>
-        推荐美食 Top {{ foods.length }}
+        推荐美食 Top 10
       </h3>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -198,9 +218,12 @@
                 {{ food.description || '暂无描述' }}
               </p>
               <div class="flex items-center justify-between">
-                <div class="flex items-center gap-1 text-xs" style="color: #FFC107">
-                  ★ {{ food.rating?.toFixed(1) }}
+                <div class="flex items-center gap-2 text-xs">
+                  <span style="color: #FFC107">★ {{ food.rating?.toFixed(1) }}</span>
                   <span style="color: var(--color-text-muted)">({{ food.rating_count }})</span>
+                  <span v-if="sortBy === 'distance' && (food as any).distance != null" class="text-xs font-medium" style="color: #E65100">
+                    📍 {{ ((food as any).distance * 1.2).toFixed(0) }}m
+                  </span>
                 </div>
                 <span class="text-sm font-bold" style="color: var(--color-danger)">
                   ¥{{ food.price }}
@@ -248,6 +271,7 @@ const spotOptions = ref<Spot[]>([])
 const areaId = ref<number | string>('')
 const searchKeyword = ref('')
 const activeCuisine = ref('')
+const sortBy = ref('rating')
 const loading = ref(false)
 
 const foods = ref<Food[]>([])
@@ -270,6 +294,14 @@ function similarityColor(sim: number): string {
   if (sim >= 0.6) return '#40916C'
   if (sim >= 0.4) return '#F4A261'
   return '#E63946'
+}
+
+function onSortChange() {
+  if (searchKeyword.value.trim() && searchResults.value.length > 0) {
+    handleSearch()
+  } else {
+    loadFoods()
+  }
 }
 
 function selectSearchResult(result: FuzzyMatchResult) {
@@ -341,12 +373,17 @@ async function loadFoods() {
   searchResults.value = []
   searchKeyword.value = ''
   try {
-    const res = await getFoodRecommendations({
+    const params: any = {
       area_id: Number(areaId.value),
       limit: 10,
-      sort_by: 'rating',
+      sort_by: sortBy.value,
       cuisine: activeCuisine.value || undefined,
-    })
+    }
+    if (sortBy.value === 'distance') {
+      params.ref_x = 500
+      params.ref_y = 350
+    }
+    const res = await getFoodRecommendations(params)
     foods.value = unwrapItems(res.data).map(normalizeFood)
   } catch (e) {
     console.error('加载美食失败:', e)
@@ -361,11 +398,17 @@ async function handleSearch() {
   loading.value = true
   foods.value = []
   try {
-    const res = await searchFoods({
+    const params: any = {
       area_id: Number(areaId.value),
       keyword: searchKeyword.value,
       limit: 10,
-    })
+      sort_by: sortBy.value,
+    }
+    if (sortBy.value === 'distance') {
+      params.ref_x = 500
+      params.ref_y = 350
+    }
+    const res = await searchFoods(params)
     const data = res.data as any
     const items = unwrapItems(data)
     searchResults.value = items.map(normalizeSearchResult)
