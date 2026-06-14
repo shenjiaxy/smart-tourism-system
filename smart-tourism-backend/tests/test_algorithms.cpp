@@ -32,6 +32,10 @@
 #include "algorithm/inverted_index.h"
 #include "algorithm/huffman.h"
 #include "algorithm/edit_distance.h"
+#include "service/route_service.h"
+#include "service/auth_service.h"
+#include "service/admin_service.h"
+#include "service/diary_service.h"
 
 using namespace algorithm;
 using namespace std;
@@ -188,6 +192,19 @@ void test_heap() {
         ASSERT_EQ(max_heap.pop(), 5);
         PASS();
     }
+
+    TEST("扩容后保持最小堆顺序");
+    {
+        Heap<int, std::greater<int>> min_heap(2);
+        for (int i = 63; i >= 0; i--) {
+            min_heap.push(i);
+        }
+        for (int i = 0; i < 64; i++) {
+            ASSERT_EQ(min_heap.pop(), i);
+        }
+        ASSERT(min_heap.empty());
+        PASS();
+    }
 }
 
 // ============================================================
@@ -268,6 +285,25 @@ void test_dijkstra() {
         // 畅通路时间: 300/(1.2*0.95) ≈ 263.2
         // 时间策略应选畅通路
         ASSERT(time < 280.0);  // 应该选A-C
+        PASS();
+    }
+}
+
+void test_route_service() {
+    cout << "\n=== RouteService (数据库路网) ===" << endl;
+
+    TEST("示范校园单目标最短路径");
+    {
+        json body = {
+            {"area_id", 900001},
+            {"from_node", 900005},
+            {"to_node", 900014},
+            {"strategy", "distance"}
+        };
+        json result = service::RouteService::plan_single(body);
+        ASSERT(result.value("found", false));
+        ASSERT(result.value("path_length", 0) >= 2);
+        ASSERT(result.value("distance", 0.0) > 0.0);
         PASS();
     }
 }
@@ -710,6 +746,103 @@ void test_edit_distance() {
 // ============================================================
 // 主函数：运行所有测试
 // ============================================================
+void test_auth_service() {
+    cout << "\n=== AuthService (login and session) ===" << endl;
+
+    TEST("user login restores session");
+    {
+        auto result = service::AuthService::login("zhangsan", "pass123");
+        ASSERT(result.success);
+        ASSERT(!result.token.empty());
+        ASSERT_EQ(result.user.username, "zhangsan");
+        ASSERT_EQ(result.user.role, "user");
+
+        auto current = service::AuthService::find_session(result.token);
+        ASSERT(current.has_value());
+        ASSERT_EQ(current->id, result.user.id);
+        service::AuthService::logout(result.token);
+        PASS();
+    }
+
+    TEST("admin role is recognized");
+    {
+        auto result = service::AuthService::login("admin", "pass123");
+        ASSERT(result.success);
+        ASSERT(service::AuthService::is_admin(result.user));
+        service::AuthService::logout(result.token);
+        PASS();
+    }
+
+    TEST("wrong password is rejected");
+    {
+        auto result = service::AuthService::login("zhangsan", "wrong-password");
+        ASSERT(!result.success);
+        ASSERT(result.token.empty());
+        PASS();
+    }
+
+    TEST("logout invalidates token");
+    {
+        auto result = service::AuthService::login("lisi", "pass123");
+        ASSERT(result.success);
+        service::AuthService::logout(result.token);
+        ASSERT(!service::AuthService::find_session(result.token).has_value());
+        PASS();
+    }
+}
+
+void test_admin_service() {
+    cout << "\n=== AdminService (admin data) ===" << endl;
+
+    TEST("admin overview and user list");
+    {
+        auto overview = service::AdminService::get_overview();
+        ASSERT(overview.value("users", 0) >= 10);
+        ASSERT(overview.value("admins", 0) >= 1);
+
+        auto users = service::AdminService::get_users();
+        ASSERT(users.is_array());
+        ASSERT(users.size() >= 10);
+        PASS();
+    }
+
+    TEST("admin updates and restores user role");
+    {
+        ASSERT(service::AdminService::update_user_role(25, "admin"));
+        auto users = service::AdminService::get_users();
+        bool promoted = false;
+        for (const auto& user : users) {
+            if (user.value("id", 0) == 25) {
+                promoted = user.value("role", "") == "admin";
+                break;
+            }
+        }
+        ASSERT(promoted);
+        ASSERT(service::AdminService::update_user_role(25, "user"));
+        PASS();
+    }
+}
+
+void test_diary_service() {
+    cout << "\n=== DiaryService (optional fields) ===" << endl;
+
+    TEST("create diary without optional media fields");
+    {
+        json body = {
+            {"user_id", 1},
+            {"title", "authorization regression test"},
+            {"content", "temporary test diary"},
+            {"destination", "test"},
+            {"tags", "[]"}
+        };
+        auto result = service::DiaryService::create_diary(body);
+        int diary_id = result.value("id", 0);
+        ASSERT(diary_id > 0);
+        ASSERT(service::DiaryService::delete_diary(diary_id).value("success", false));
+        PASS();
+    }
+}
+
 void run_all_tests() {
     cout << "========================================" << endl;
     cout << "  Smart Tourism System - Algorithm Tests" << endl;
@@ -726,6 +859,9 @@ void run_all_tests() {
     test_inverted_index();
     test_huffman();
     test_edit_distance();
+    test_auth_service();
+    test_admin_service();
+    test_diary_service();
 
     cout << "\n========================================" << endl;
     cout << "  Results: " << passed_tests << "/" << total_tests << " passed";

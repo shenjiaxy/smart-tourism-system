@@ -36,98 +36,57 @@ private:
         return mutex;
     }
 
-    // 静态缓存：倒排索引（懒加载，线程安全）
-    static algorithm::InvertedIndex& get_index() {
+    static algorithm::InvertedIndex& index_cache() {
         static algorithm::InvertedIndex index;
-        static std::once_flag init_flag;
-        std::call_once(init_flag, [&]() {
-            rebuild_index(index);
-        });
         return index;
     }
 
-    // 静态缓存：标题 HashMap（标题 -> 日记ID，线程安全）
-    static algorithm::HashMap<std::string, int>& get_title_map() {
+    static algorithm::HashMap<std::string, int>& title_cache() {
         static algorithm::HashMap<std::string, int> title_map(64);
-        static std::once_flag init_flag;
-        std::call_once(init_flag, [&]() {
-            rebuild_title_map(title_map);
-        });
         return title_map;
     }
 
-    /**
-     * @brief 从数据库加载所有日记，重建倒排索引
-     */
-    static void rebuild_index(algorithm::InvertedIndex& index) {
-        try {
-            json diaries = repository::DiaryRepo::get_all_for_indexing();
-            if (!diaries.is_array()) return;
+    static bool& index_initialized() {
+        static bool initialized = false;
+        return initialized;
+    }
 
+    static bool& index_dirty() {
+        static bool dirty = true;
+        return dirty;
+    }
+
+    static void ensure_index_ready() {
+        if (index_initialized() && !index_dirty()) return;
+
+        auto& index = index_cache();
+        auto& title_map = title_cache();
+        index = algorithm::InvertedIndex();
+        title_map.clear();
+
+        json diaries = repository::DiaryRepo::get_all_for_indexing();
+        if (diaries.is_array()) {
             for (const auto& d : diaries) {
                 int id = d.value("id", 0);
                 std::string title = d.value("title", "");
                 std::string content = d.value("content", "");
-                if (id > 0 && (!title.empty() || !content.empty())) {
-                    index.add_document(id, title, content);
-                }
-            }
-        } catch (...) {
-            // 索引构建失败不影响基本功能
-        }
-    }
-
-    /**
-     * @brief 从数据库加载所有日记标题，构建 HashMap
-     */
-    static void rebuild_title_map(algorithm::HashMap<std::string, int>& title_map) {
-        try {
-            json diaries = repository::DiaryRepo::get_all_for_indexing();
-            if (!diaries.is_array()) return;
-
-            for (const auto& d : diaries) {
-                int id = d.value("id", 0);
-                std::string title = d.value("title", "");
-                if (id > 0 && !title.empty()) {
-                    title_map.insert(title, id);
-                }
-            }
-        } catch (...) {
-            // 构建失败不影响基本功能
-        }
-    }
-
-    /**
-     * @brief 强制刷新索引（新增/修改/删除日记后调用）
-     */
-    static void refresh_index() {
-        std::lock_guard<std::mutex> lock(index_mutex());
-        // 通过重建来刷新
-        try {
-            json diaries = repository::DiaryRepo::get_all_for_indexing();
-            auto& index = get_index();
-            auto& title_map = get_title_map();
-
-            // 清空并重建
-            index = std::move(algorithm::InvertedIndex());
-            title_map.clear();
-
-            if (diaries.is_array()) {
-                for (const auto& d : diaries) {
-                    int id = d.value("id", 0);
-                    std::string title = d.value("title", "");
-                    std::string content = d.value("content", "");
-                    if (id > 0) {
-                        if (!title.empty() || !content.empty()) {
-                            index.add_document(id, title, content);
-                        }
-                        if (!title.empty()) {
-                            title_map.insert(title, id);
-                        }
+                if (id > 0) {
+                    if (!title.empty() || !content.empty()) {
+                        index.add_document(id, title, content);
+                    }
+                    if (!title.empty()) {
+                        title_map.insert(title, id);
                     }
                 }
             }
-        } catch (...) {}
+        }
+        index_initialized() = true;
+        index_dirty() = false;
+    }
+
+    static void refresh_index() {
+        std::lock_guard<std::mutex> lock(index_mutex());
+        index_dirty() = true;
     }
 
     /**
@@ -247,11 +206,11 @@ public:
             std::string content = body.value("content", "");
             std::string dest = body.value("destination", "");
             int dest_id = body.value("destination_id", 0);
-            std::string tags = body["tags"].is_array() ? body["tags"].dump()
+            std::string tags = body.contains("tags") && body["tags"].is_array() ? body["tags"].dump()
                              : body.value("tags", std::string("[]"));
-            std::string images = body["images"].is_array() ? body["images"].dump()
+            std::string images = body.contains("images") && body["images"].is_array() ? body["images"].dump()
                                : body.value("images", std::string("[]"));
-            std::string videos = body["videos"].is_array() ? body["videos"].dump()
+            std::string videos = body.contains("videos") && body["videos"].is_array() ? body["videos"].dump()
                                : body.value("videos", std::string("[]"));
 
             if (user_id <= 0 || title.empty()) {
@@ -354,7 +313,8 @@ public:
                 int found_id = 0;
                 {
                     std::lock_guard<std::mutex> lock(index_mutex());
-                    auto& title_map = get_title_map();
+                    ensure_index_ready();
+                    auto& title_map = title_cache();
                     const int* diary_id = title_map.find(keyword);
                     if (diary_id) found_id = *diary_id;
                 }
@@ -378,7 +338,8 @@ public:
                 int match_count;
                 {
                     std::lock_guard<std::mutex> lock(index_mutex());
-                    auto& index = get_index();
+                    ensure_index_ready();
+                    auto& index = index_cache();
                     match_count = index.search(keyword, doc_ids.get(), scores.get(), limit);
                 }
 

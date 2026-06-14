@@ -10,7 +10,7 @@
       <div class="panel-head">
         <p class="editorial-kicker">Route Atelier</p>
         <h1 class="editorial-heading">路线规划</h1>
-        <p>先用前端母版确定校园/景区地图，再把建筑、道路和距离数据反写到后端。</p>
+        <p>地图由后端景区节点、道路和设施数据实时生成，每个区域都有独立路网与空间布局。</p>
       </div>
 
       <div class="control-group">
@@ -157,6 +157,8 @@ import { getGraphData, getSpotOptions } from '@/api/spot'
 import { planMultiRoute, planSingleRoute } from '@/api/route'
 import IndoorNavigationPanel from '@/components/map/IndoorNavigationPanel.vue'
 import type { MapNode, MultiRouteResult, Road, SingleRouteResult, Spot } from '@/types'
+import { mergeMapSpotOptions } from '@/utils/mapSpotOptions'
+import { buildMapScene } from '@/utils/mapScene'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let ctx: CanvasRenderingContext2D | null = null
@@ -246,6 +248,20 @@ type DemoBuilding = {
   label: DemoPoint
 }
 const DEMO_AREA_ID = 900001
+const demoSpotOption: Spot = {
+  id: DEMO_AREA_ID,
+  name: '北湖书院示范校园',
+  type: 'campus',
+  category: '校园景区',
+  description: '用于地图视觉与数据落库的前端示范母版',
+  popularity: 96000,
+  rating: 4.9,
+  rating_count: 0,
+  city: '示范城市',
+  address: '北湖书院',
+  open_time: '全天开放',
+  ticket_price: 0,
+}
 
 const demoWaterShapes: DemoPoint[][] = [
   [[-80, 620], [48, 584], [148, 618], [212, 698], [198, 806], [96, 884], [-80, 918]],
@@ -386,6 +402,15 @@ const demoRoads: Road[] = demoRoadConnections.map(([fromId, toId], index) => {
   }
 })
 
+const selectedSpot = computed(() =>
+  spotOptions.value.find(spot => String(spot.id) === String(selectedAreaId.value)) || null
+)
+
+const currentScene = computed(() => {
+  if (!selectedSpot.value) return null
+  return buildMapScene(selectedSpot.value, graphNodes.value, graphRoads.value)
+})
+
 const selectableNodes = computed(() =>
   graphNodes.value.filter(n => n.type !== 'junction')
 )
@@ -466,14 +491,10 @@ function calcBaseTransform() {
     view.baseY = (rect.height - mapHeight * view.baseScale) / 2 - bounds.minY * view.baseScale + 8
     return
   }
-  if (!graphNodes.value.length || !canvasRef.value) return
+  const scene = currentScene.value
+  if (!scene || !canvasRef.value) return
   const rect = canvasRef.value.getBoundingClientRect()
-  const xs = graphNodes.value.map(n => n.pos_x)
-  const ys = graphNodes.value.map(n => n.pos_y)
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
-  const minY = Math.min(...ys)
-  const maxY = Math.max(...ys)
+  const { minX, maxX, minY, maxY } = scene.bounds
   const rangeX = maxX - minX || 1
   const rangeY = maxY - minY || 1
   view.baseScale = Math.min((rect.width - 120) / rangeX, (rect.height - 120) / rangeY)
@@ -495,6 +516,10 @@ function isDemoArea() {
 function draw() {
   const canvas = canvasRef.value
   if (!ctx || !canvas) return
+  const scene = currentScene.value
+  canvas.dataset.sceneSignature = isDemoArea() ? 'demo-900001' : scene?.signature || ''
+  canvas.dataset.nodeCount = String(graphNodes.value.length)
+  canvas.dataset.roadCount = String(graphRoads.value.length)
   const rect = canvas.getBoundingClientRect()
   ctx.clearRect(0, 0, rect.width, rect.height)
   drawTerrain(rect.width, rect.height)
@@ -506,10 +531,12 @@ function draw() {
 
 function drawTerrain(w: number, h: number) {
   if (!ctx) return
-  ctx.fillStyle = '#f5f3ee'
+  const scene = currentScene.value
+  const palette = !isDemoArea() && scene ? scene.palette : null
+  ctx.fillStyle = palette?.background || '#f5f3ee'
   ctx.fillRect(0, 0, w, h)
 
-  ctx.strokeStyle = 'rgba(90, 104, 111, 0.014)'
+  ctx.strokeStyle = palette?.grid || 'rgba(90, 104, 111, 0.014)'
   ctx.lineWidth = 1
   for (let x = -80 + (view.panX % 120); x < w + 80; x += 120) {
     ctx.beginPath()
@@ -529,36 +556,70 @@ function drawTerrain(w: number, h: number) {
   ctx.scale(view.baseScale * view.zoom, view.baseScale * view.zoom)
   const lineAdjust = 1 / Math.max(view.baseScale, 0.1)
 
-  drawMapPolygons(demoWaterShapes, '#cfe8f7', '#b7d9eb', 1.2)
-  drawMapPolygons(demoLandShapes, '#dcebd4', '#c8ddbe', 0.8)
-  drawMapLineSet(demoFootpaths, '#8d9a9a', 1.4 * lineAdjust, [5, 7])
-  drawRoadLayer(demoMajorRoads, 14 * lineAdjust, '#cfd4d5', 10 * lineAdjust, '#ffffff')
-  drawRoadLayer(demoMinorRoads, 5.5 * lineAdjust, '#c9ced1', 3.6 * lineAdjust, '#ffffff')
-  drawRoadLayer(demoDistrictRoads, 6.5 * lineAdjust, '#c2c8cb', 4.4 * lineAdjust, '#ffffff')
-  drawDemoBuildings()
-  drawMapLabels()
+  if (isDemoArea()) {
+    drawMapPolygons(demoWaterShapes, '#cfe8f7', '#b7d9eb', 1.2)
+    drawMapPolygons(demoLandShapes, '#dcebd4', '#c8ddbe', 0.8)
+    drawMapLineSet(demoFootpaths, '#8d9a9a', 1.4 * lineAdjust, [5, 7])
+    drawRoadLayer(demoMajorRoads, 14 * lineAdjust, '#cfd4d5', 10 * lineAdjust, '#ffffff')
+    drawRoadLayer(demoMinorRoads, 5.5 * lineAdjust, '#c9ced1', 3.6 * lineAdjust, '#ffffff')
+    drawRoadLayer(demoDistrictRoads, 6.5 * lineAdjust, '#c2c8cb', 4.4 * lineAdjust, '#ffffff')
+    drawDemoBuildings()
+    drawMapLabels()
+  } else if (scene && palette) {
+    for (const shape of scene.terrain) {
+      const fill = shape.kind === 'water'
+        ? palette.water
+        : shape.kind === 'green'
+          ? palette.green
+          : palette.district
+      const stroke = shape.kind === 'water'
+        ? palette.waterStroke
+        : shape.kind === 'green'
+          ? palette.greenStroke
+          : palette.districtStroke
+      drawMapPolygons([shape.points], fill, stroke, 1.1 * lineAdjust)
+    }
+  }
   ctx.restore()
 }
 
 function drawRoads() {
   if (!ctx) return
   if (isDemoArea()) return
-  const faintRoads = graphRoads.value.slice(0, 40)
+  const roads = currentScene.value?.roads || []
   const nodeMap = new Map(graphNodes.value.map(n => [n.id, n]))
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.strokeStyle = 'rgba(20,20,20,0.18)'
-  ctx.lineWidth = 1
-  for (const road of faintRoads) {
+  for (const road of roads) {
     const from = nodeMap.get(road.from_node)
     const to = nodeMap.get(road.to_node)
     if (!from || !to) continue
     const [x1, y1] = toScreen(from.pos_x, from.pos_y)
     const [x2, y2] = toScreen(to.pos_x, to.pos_y)
-    drawCurvedSegment(x1, y1, x2, y2, (road.id % 5 - 2) * 12)
+    const bend = (road.id % 5 - 2) * 4
+    const transport = Number(road.transport)
+    const baseWidth = transport === 2 ? 5.5 : transport === 1 ? 4 : 2.6
+    const congestion = Math.max(0, Math.min(1, Number(road.congestion) || 0))
+
+    ctx.setLineDash(transport === 0 ? [5, 4] : [])
+    ctx.strokeStyle = transport === 2 ? '#c7ccd0' : '#d4d6d3'
+    ctx.lineWidth = baseWidth + 2.2
+    drawCurvedSegment(x1, y1, x2, y2, bend)
+    ctx.stroke()
+
+    ctx.strokeStyle = congestion > 0.7
+      ? '#f1d6b8'
+      : transport === 2
+        ? '#ffffff'
+        : transport === 1
+          ? '#f7f5ee'
+          : '#9ea9a4'
+    ctx.lineWidth = baseWidth
+    drawCurvedSegment(x1, y1, x2, y2, bend)
     ctx.stroke()
   }
+  ctx.setLineDash([])
   ctx.restore()
 }
 
@@ -611,12 +672,19 @@ function drawRoute() {
 
 function drawNodes() {
   if (!ctx) return
-  const sorted = selectableNodes.value.slice(0, 26)
-  for (const node of sorted) {
+  for (const node of currentScene.value?.nodes || []) {
     const [x, y] = toScreen(node.pos_x, node.pos_y)
     const isSelected = node.id === startNode.value?.id || node.id === endNode.value?.id || waypoints.value.some(w => w.id === node.id)
     const isHovered = hoveredNode.value?.id === node.id
-    drawMapPoi(x, y, node, isSelected, isHovered)
+    if (node.type === 'junction') {
+      drawJunction(x, y)
+    } else if (node.type === 'building') {
+      drawBuilding(x, y, node, isSelected, isHovered)
+    } else if (node.type === 'facility') {
+      drawFacility(x, y, node, isSelected, isHovered)
+    } else {
+      drawMapPoi(x, y, node, isSelected, isHovered)
+    }
   }
 }
 
@@ -828,23 +896,7 @@ function buildingKindLabel(kind: string) {
 function seedDemoGraph() {
   selectedAreaId.value = DEMO_AREA_ID
   if (!spotOptions.value.some(s => s.id === DEMO_AREA_ID)) {
-    spotOptions.value = [
-      {
-        id: DEMO_AREA_ID,
-        name: '北湖书院示范校园',
-        type: 'campus',
-        category: '校园景区',
-        description: '用于地图视觉与数据落库的前端示范母版',
-        popularity: 96000,
-        rating: 4.9,
-        rating_count: 0,
-        city: '示范城市',
-        address: '北湖书院',
-        open_time: '全天开放',
-        ticket_price: 0,
-      },
-      ...spotOptions.value,
-    ]
+    spotOptions.value = mergeMapSpotOptions(demoSpotOption, spotOptions.value)
   }
   graphNodes.value = demoGraphNodes
   graphRoads.value = demoRoads
@@ -1372,19 +1424,24 @@ async function loadDefaultGraphArea() {
   }
 }
 
+async function loadSpotOptions() {
+  try {
+    const res = await getSpotOptions()
+    spotOptions.value = mergeMapSpotOptions(demoSpotOption, res.data || [])
+  } catch (error) {
+    console.error('加载景区列表失败:', error)
+  }
+}
+
 function handleResize() {
   resizeCanvas()
   requestDraw()
 }
 
 onMounted(async () => {
-  try {
-    const res = await getSpotOptions()
-    spotOptions.value = res.data || []
-    await loadDefaultGraphArea()
-  } catch (error) {
-    console.error('加载区域列表失败:', error)
-  }
+  seedDemoGraph()
+  await loadSpotOptions()
+  await loadDefaultGraphArea()
   await nextTick()
   resizeCanvas()
   requestDraw()

@@ -220,6 +220,47 @@ export interface UserInterest {
   weight: number
 }
 
+export interface AuthUser {
+  id: number
+  username: string
+  nickname: string
+  avatar: string
+  role: 'user' | 'admin'
+}
+
+export interface LoginResult {
+  token: string
+  user: AuthUser
+}
+
+export interface AdminOverview {
+  users: number
+  admins: number
+  scenic_spots: number
+  nodes: number
+  roads: number
+  diaries: number
+  foods: number
+  ratings: number
+}
+
+export interface AdminUser extends AuthUser {
+  created_at: string
+}
+
+export interface AdminDiary {
+  id: number
+  title: string
+  destination: string
+  popularity: number
+  avg_rating: number
+  rating_count: number
+  created_at: string
+  user_id: number
+  username: string
+  nickname: string
+}
+
 export interface PageResult<T = any> {
   items: T[]
   total: number

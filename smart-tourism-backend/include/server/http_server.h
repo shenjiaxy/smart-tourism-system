@@ -55,6 +55,12 @@ private:
     // --- 通用路由 ---
     void register_common_routes();
 
+    // --- 登录与会话 ---
+    void register_auth_routes();
+
+    // --- 管理员后台 ---
+    void register_admin_routes();
+
     // ========== CORS 中间件 ==========
     void setup_cors();
 };

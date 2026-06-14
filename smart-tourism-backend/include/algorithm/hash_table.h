@@ -316,6 +316,31 @@ public:
     }
     ~IntHashMap() { delete[] buckets_; }
 
+    IntHashMap(const IntHashMap&) = delete;
+    IntHashMap& operator=(const IntHashMap&) = delete;
+
+    IntHashMap(IntHashMap&& other) noexcept
+        : buckets_(other.buckets_),
+          bucket_count_(other.bucket_count_),
+          size_(other.size_) {
+        other.buckets_ = nullptr;
+        other.bucket_count_ = 0;
+        other.size_ = 0;
+    }
+
+    IntHashMap& operator=(IntHashMap&& other) noexcept {
+        if (this != &other) {
+            delete[] buckets_;
+            buckets_ = other.buckets_;
+            bucket_count_ = other.bucket_count_;
+            size_ = other.size_;
+            other.buckets_ = nullptr;
+            other.bucket_count_ = 0;
+            other.size_ = 0;
+        }
+        return *this;
+    }
+
     void put(int key, int value) {
         unsigned int idx = hash_int(key, bucket_count_);
         Node* c = buckets_[idx].head;

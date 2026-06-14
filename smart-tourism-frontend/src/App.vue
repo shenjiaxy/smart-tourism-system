@@ -1,7 +1,7 @@
 <template>
   <div id="app-container">
-    <AppHeader />
-    <main class="page-container">
+    <AppHeader v-if="layout === 'user'" />
+    <main :class="{ 'page-container': layout === 'user' }">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
@@ -12,7 +12,16 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import AppHeader from '@/components/layout/AppHeader.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const route = useRoute()
+const auth = useAuthStore()
+const layout = computed(() => route.meta.layout || 'user')
+
+onMounted(() => auth.restore())
 </script>
 
 <style scoped>

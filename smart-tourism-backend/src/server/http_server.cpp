@@ -8,10 +8,41 @@
 #include "service/facility_service.h"
 #include "service/diary_service.h"
 #include "service/food_service.h"
+#include "service/auth_service.h"
+#include "service/admin_service.h"
 #include "service/aigc_service.h"
 #include <iostream>
 
 using json = nlohmann::json;
+
+namespace {
+
+std::string bearer_token(const httplib::Request& req) {
+    const std::string authorization = req.get_header_value("Authorization");
+    constexpr const char* prefix = "Bearer ";
+    if (authorization.rfind(prefix, 0) != 0) return "";
+    return authorization.substr(7);
+}
+
+std::optional<service::AuthUser> current_user(const httplib::Request& req) {
+    return service::AuthService::find_session(bearer_token(req));
+}
+
+void set_json(httplib::Response& res, const json& body, int status = 200) {
+    res.status = status;
+    res.set_content(body.dump(), "application/json");
+}
+
+bool can_manage_diary(const httplib::Request& req, int diary_id) {
+    auto user = current_user(req);
+    if (!user.has_value()) return false;
+    if (service::AuthService::is_admin(*user)) return true;
+    const int owner_id = Database::get().query_int(
+        "SELECT user_id FROM diaries WHERE id = " + std::to_string(diary_id), 0);
+    return owner_id == user->id;
+}
+
+} // namespace
 
 // ============================================================
 // 构造函数
@@ -20,6 +51,8 @@ HttpServer::HttpServer() {}
 
 void HttpServer::register_routes() {
     setup_cors();
+    register_auth_routes();
+    register_admin_routes();
     register_common_routes();
     register_spot_routes();
     register_route_routes();
@@ -39,6 +72,27 @@ void HttpServer::setup_cors() {
     server_.Options("(.*)", [](const httplib::Request&, httplib::Response& res) {
         res.status = 204;
     });
+    server_.set_pre_routing_handler(
+        [](const httplib::Request& req, httplib::Response& res) {
+            if (req.method == "OPTIONS" || req.path.rfind("/api", 0) != 0 ||
+                req.path == "/api/health" || req.path == "/api/auth/login") {
+                return httplib::Server::HandlerResponse::Unhandled;
+            }
+
+            auto user = current_user(req);
+            if (!user.has_value()) {
+                set_json(res, Response::unauthorized("Login required"), 401);
+                return httplib::Server::HandlerResponse::Handled;
+            }
+
+            if (req.path.rfind("/api/admin", 0) == 0 &&
+                !service::AuthService::is_admin(*user)) {
+                set_json(res, Response::error(403, "Administrator access required"), 403);
+                return httplib::Server::HandlerResponse::Handled;
+            }
+
+            return httplib::Server::HandlerResponse::Unhandled;
+        });
     std::cout << "[Server] CORS middleware configured." << std::endl;
 }
 
@@ -54,6 +108,105 @@ void HttpServer::run(const std::string& host, int port) {
 
 void HttpServer::stop() { server_.stop(); }
 void HttpServer::set_static_dir(const std::string& dir) { static_dir_ = dir; }
+
+void HttpServer::register_auth_routes() {
+    server_.Post("/api/auth/login", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            auto result = service::AuthService::login(
+                body.value("username", ""),
+                body.value("password", ""));
+
+            if (!result.success) {
+                set_json(res, Response::unauthorized("Invalid username or password"), 401);
+                return;
+            }
+
+            set_json(res, Response::ok({
+                {"token", result.token},
+                {"user", result.user.to_json()}
+            }));
+        } catch (const json::parse_error&) {
+            set_json(res, Response::bad_request("Invalid JSON"), 400);
+        } catch (const std::exception& e) {
+            set_json(res, Response::server_error(e.what()), 500);
+        }
+    });
+
+    server_.Get("/api/auth/me", [](const httplib::Request& req, httplib::Response& res) {
+        auto user = current_user(req);
+        set_json(res, Response::ok(user->to_json()));
+    });
+
+    server_.Post("/api/auth/logout", [](const httplib::Request& req, httplib::Response& res) {
+        service::AuthService::logout(bearer_token(req));
+        set_json(res, Response::ok(json::object(), "Logged out"));
+    });
+}
+
+void HttpServer::register_admin_routes() {
+    server_.Get("/api/admin/overview", [](const httplib::Request&, httplib::Response& res) {
+        try {
+            set_json(res, Response::ok(service::AdminService::get_overview()));
+        } catch (const std::exception& e) {
+            set_json(res, Response::server_error(e.what()), 500);
+        }
+    });
+
+    server_.Get("/api/admin/users", [](const httplib::Request&, httplib::Response& res) {
+        try {
+            set_json(res, Response::ok(service::AdminService::get_users()));
+        } catch (const std::exception& e) {
+            set_json(res, Response::server_error(e.what()), 500);
+        }
+    });
+
+    server_.Put(R"(/api/admin/users/(\d+)/role)",
+        [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                const int user_id = std::stoi(req.matches[1]);
+                auto actor = current_user(req);
+                if (actor->id == user_id) {
+                    set_json(res, Response::bad_request("You cannot change your own role"), 400);
+                    return;
+                }
+
+                json body = json::parse(req.body);
+                const std::string role = body.value("role", "");
+                if (!service::AdminService::update_user_role(user_id, role)) {
+                    set_json(res, Response::bad_request("Invalid user or role"), 400);
+                    return;
+                }
+                set_json(res, Response::ok({{"id", user_id}, {"role", role}}));
+            } catch (const json::parse_error&) {
+                set_json(res, Response::bad_request("Invalid JSON"), 400);
+            } catch (const std::exception& e) {
+                set_json(res, Response::server_error(e.what()), 500);
+            }
+        });
+
+    server_.Get("/api/admin/diaries", [](const httplib::Request&, httplib::Response& res) {
+        try {
+            set_json(res, Response::ok(service::AdminService::get_diaries()));
+        } catch (const std::exception& e) {
+            set_json(res, Response::server_error(e.what()), 500);
+        }
+    });
+
+    server_.Delete(R"(/api/admin/diaries/(\d+))",
+        [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                const int diary_id = std::stoi(req.matches[1]);
+                if (!service::AdminService::delete_diary(diary_id)) {
+                    set_json(res, Response::not_found("Diary not found"), 404);
+                    return;
+                }
+                set_json(res, Response::ok({{"id", diary_id}}, "Diary deleted"));
+            } catch (const std::exception& e) {
+                set_json(res, Response::server_error(e.what()), 500);
+            }
+        });
+}
 
 // ============================================================
 // 通用路由
@@ -429,6 +582,7 @@ void HttpServer::register_diary_routes() {
     server_.Post("/api/diaries", [](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
+            body["user_id"] = current_user(req)->id;
             json result = service::DiaryService::create_diary(body);
             json resp;
             if (result.contains("error")) {
@@ -452,6 +606,10 @@ void HttpServer::register_diary_routes() {
     server_.Put(R"(/api/diaries/(\d+))", [](const httplib::Request& req, httplib::Response& res) {
         try {
             int id = std::stoi(req.matches[1]);
+            if (!can_manage_diary(req, id)) {
+                set_json(res, Response::error(403, "You can only edit your own diary"), 403);
+                return;
+            }
             json body = json::parse(req.body);
             json result = service::DiaryService::update_diary(id, body);
             json resp;
@@ -476,6 +634,10 @@ void HttpServer::register_diary_routes() {
     server_.Delete(R"(/api/diaries/(\d+))", [](const httplib::Request& req, httplib::Response& res) {
         try {
             int id = std::stoi(req.matches[1]);
+            if (!can_manage_diary(req, id)) {
+                set_json(res, Response::error(403, "You can only delete your own diary"), 403);
+                return;
+            }
             json result = service::DiaryService::delete_diary(id);
             json resp;
             if (result.contains("error")) {
@@ -571,7 +733,7 @@ void HttpServer::register_diary_routes() {
         try {
             int diary_id = std::stoi(req.matches[1]);
             json body = json::parse(req.body);
-            int user_id = body.value("user_id", 1);
+            int user_id = current_user(req)->id;
             int score = body.value("score", 5);
             json result = service::DiaryService::rate_diary(user_id, diary_id, score);
             json resp;
