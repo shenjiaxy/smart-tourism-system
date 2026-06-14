@@ -40,7 +40,7 @@ public:
         int from_node = body.value("from_node", 0);
         int to_node = body.value("to_node", 0);
         std::string strategy_str = body.value("strategy", std::string("distance"));
-        int transport = body.value("transport", 7);
+        int transport = body.value("transport", 0);
 
         if (area_id <= 0 || from_node <= 0 || to_node <= 0) {
             return {{"error", "area_id, from_node, to_node are required"}};
@@ -64,6 +64,53 @@ public:
         algorithm::DijkstraStrategy strategy = algorithm::DijkstraStrategy::SHORTEST_DISTANCE;
         if (strategy_str == "time") strategy = algorithm::DijkstraStrategy::SHORTEST_TIME;
         else if (strategy_str == "mixed") strategy = algorithm::DijkstraStrategy::MIXED_TRANSPORT;
+
+        if (transport == 0) {
+            json area = repository::SpotRepo::get_by_id(area_id);
+            transport = area.value("type", std::string("scenic")) == "campus" ? 0x3 : 0x5;
+        }
+
+        if (strategy == algorithm::DijkstraStrategy::MIXED_TRANSPORT) {
+            algorithm::MixedPathResult mixed = algorithm::Dijkstra::shortest_mixed_path(
+                g, from_it.value, to_it.value, transport);
+            if (!mixed.found) {
+                return {{"found", false}, {"message", "No mixed-transport path found"}};
+            }
+
+            json path_ids = json::array();
+            json path_names = json::array();
+            json modes = json::array();
+            json transfers = json::array();
+            for (int i = 0; i < mixed.path_length; i++) {
+                const auto& node = g.get_node(mixed.path[i]);
+                path_ids.push_back(node.id);
+                path_names.push_back(node.name);
+                modes.push_back(mixed.modes[i]);
+                if (i > 0 && mixed.path[i] == mixed.path[i - 1] &&
+                    mixed.modes[i] != mixed.modes[i - 1]) {
+                    transfers.push_back({
+                        {"node_id", node.id},
+                        {"node_name", node.name},
+                        {"from_transport", mixed.modes[i - 1]},
+                        {"to_transport", mixed.modes[i]}
+                    });
+                }
+            }
+
+            return {
+                {"found", true},
+                {"path", path_ids},
+                {"path_names", path_names},
+                {"node_names", path_names},
+                {"transport_modes", modes},
+                {"transfers", transfers},
+                {"transfer_count", mixed.transfer_count},
+                {"path_length", mixed.path_length},
+                {"distance", mixed.total_distance},
+                {"time", mixed.total_time},
+                {"strategy", strategy_str}
+            };
+        }
 
         // 计算最短路径
         int path[1024];
@@ -237,6 +284,7 @@ private:
             int to_db = r["to_node"].get<int>();
             double distance = r.value("distance", 0.0);
             double congestion = r.value("congestion", 0.5);
+            double ideal_speed = r.value("ideal_speed", 0.0);
             int transport = r.value("transport", 0);
             int is_bidir = r.value("is_bidirectional", 1);
 
@@ -244,10 +292,10 @@ private:
             int* to_idx = id_to_idx.get(to_db);
             if (from_idx && to_idx) {
                 // 总是添加正向边
-                g.add_edge(*from_idx, *to_idx, distance, congestion, transport);
+                g.add_edge(*from_idx, *to_idx, distance, congestion, transport, ideal_speed);
                 // 双向道路：额外添加反向边
                 if (is_bidir != 0) {
-                    g.add_edge(*to_idx, *from_idx, distance, congestion, transport);
+                    g.add_edge(*to_idx, *from_idx, distance, congestion, transport, ideal_speed);
                 }
             }
         }

@@ -25,6 +25,7 @@
 #include "algorithm/graph.h"
 #include "algorithm/heap.h"
 #include "algorithm/dijkstra.h"
+#include "algorithm/indoor_navigation.h"
 #include "algorithm/tsp.h"
 #include "algorithm/hash_table.h"
 #include "algorithm/trie.h"
@@ -310,6 +311,69 @@ void test_route_service() {
 // ============================================================
 // 4. TSP 测试
 // ============================================================
+void test_route_strategy_requirements() {
+    cout << "\n=== Route Strategy Requirements ===" << endl;
+
+    TEST("congestion uses actual speed formula");
+    {
+        Graph g(Graph::Type::DIRECTED);
+        g.add_node(0, 0, 0, -1, "A");
+        g.add_node(1, 1, 0, -1, "B");
+        g.add_edge(0, 1, 100.0, 0.5, 0, 2.0);
+
+        const auto& edge = g.get_neighbors(0)[0];
+        ASSERT_NEAR(edge.time, 100.0, 0.01);
+        PASS();
+    }
+
+    TEST("mixed transport changes mode when faster");
+    {
+        Graph g(Graph::Type::DIRECTED);
+        g.add_node(0, 0, 0, -1, "Gate");
+        g.add_node(1, 1, 0, -1, "Transfer");
+        g.add_node(2, 2, 0, -1, "Library");
+
+        g.add_edge(0, 1, 60.0, 1.0, 0, 1.0);
+        g.add_edge(1, 2, 400.0, 1.0, 1, 10.0);
+        g.add_edge(0, 2, 500.0, 1.0, 0, 1.0);
+
+        MixedPathResult mixed = Dijkstra::shortest_mixed_path(g, 0, 2, 0x3);
+        ASSERT(mixed.found);
+        ASSERT_NEAR(mixed.total_time, 130.0, 0.01);
+        ASSERT_EQ(mixed.transfer_count, 1);
+        ASSERT_EQ(mixed.path_length, 4);
+        ASSERT_EQ(mixed.path[0], 0);
+        ASSERT_EQ(mixed.path[1], 1);
+        ASSERT_EQ(mixed.path[2], 1);
+        ASSERT_EQ(mixed.path[3], 2);
+        PASS();
+    }
+}
+
+void test_indoor_navigation() {
+    cout << "\n=== Indoor Navigation ===" << endl;
+
+    TEST("cross-floor route uses elevator connection");
+    {
+        Graph g(Graph::Type::UNDIRECTED);
+        g.add_node(10, 0, 0, 1, "Gate", 1, 1);
+        g.add_node(11, 1, 0, 1, "Elevator 1F", 1, 1);
+        g.add_node(12, 1, 1, 1, "Elevator 3F", 1, 3);
+        g.add_node(13, 2, 1, 1, "Room 302", 1, 3);
+        g.add_edge(0, 1, 8.0, 1.0, 0, 1.2);
+        g.add_edge(1, 2, 15.0, 1.0, 0, 3.0);
+        g.add_edge(2, 3, 10.0, 1.0, 0, 1.2);
+
+        IndoorPathResult route = IndoorNavigation::plan(g, 0, 3);
+        ASSERT(route.found);
+        ASSERT_EQ(route.path_length, 4);
+        ASSERT_EQ(route.floor_changes, 1);
+        ASSERT_EQ(route.path[0], 0);
+        ASSERT_EQ(route.path[3], 3);
+        PASS();
+    }
+}
+
 void test_tsp() {
     cout << "\n=== TSP (多目标路径) ===" << endl;
 
@@ -787,7 +851,8 @@ void run_all_tests() {
     test_graph();
     test_heap();
     test_dijkstra();
-    test_route_service();
+    test_route_strategy_requirements();
+    test_indoor_navigation();
     test_tsp();
     test_hashmap();
     test_trie();

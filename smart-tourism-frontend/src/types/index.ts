@@ -58,6 +58,14 @@ export interface SingleRouteResult {
   strategy?: string
   node_names?: string[]
   path_names?: string[]
+  transport_modes?: number[]
+  transfers?: Array<{
+    node_id: number
+    node_name: string
+    from_transport: number
+    to_transport: number
+  }>
+  transfer_count?: number
 }
 
 export interface MultiRouteResult {
@@ -80,6 +88,57 @@ export interface RouteRequest {
   waypoints?: number[]
   strategy: 'distance' | 'time' | 'mixed'
   transport?: number
+}
+
+export interface IndoorBuilding {
+  id: number
+  area_id: number
+  name: string
+  type: string
+  total_floors: number
+  has_elevator: number
+  description: string
+  node_count: number
+}
+
+export interface IndoorNode {
+  id: number
+  building_id: number
+  floor: number
+  name: string
+  type: 'entrance' | 'elevator' | 'stairs' | 'room' | 'facility'
+  pos_x: number
+  pos_y: number
+}
+
+export interface IndoorRoad {
+  id: number
+  building_id: number
+  from_node: number
+  to_node: number
+  distance: number
+}
+
+export interface IndoorGraphData {
+  building_id: number
+  nodes: IndoorNode[]
+  roads: IndoorRoad[]
+  node_count: number
+  road_count: number
+}
+
+export interface IndoorRouteResult {
+  found: boolean
+  building_id: number
+  path: number[]
+  path_names: string[]
+  floors: number[]
+  steps: string[]
+  floor_changes: number
+  distance: number
+  time: number
+  strategy: 'distance' | 'time'
+  message?: string
 }
 
 export interface FacilityItem {
@@ -122,8 +181,8 @@ export interface CreateDiaryRequest {
   destination?: string
   destination_id?: number
   tags?: string
-  images?: string
-  videos?: string
+  images?: string[]
+  videos?: string[]
 }
 
 export interface DiarySearchResult extends Diary {

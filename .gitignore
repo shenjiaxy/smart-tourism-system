@@ -55,6 +55,9 @@ docs/*.docx
 docs/*周报*
 docs/*录屏*
 
+# Claude Code
+.claude/
+
 # IDE and OS files
 .idea/
 .vscode/

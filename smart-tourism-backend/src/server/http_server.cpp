@@ -4,11 +4,13 @@
 #include "repository/spot_repo.h"
 #include "service/recommend_service.h"
 #include "service/route_service.h"
+#include "service/indoor_route_service.h"
 #include "service/facility_service.h"
 #include "service/diary_service.h"
 #include "service/food_service.h"
 #include "service/auth_service.h"
 #include "service/admin_service.h"
+#include "service/aigc_service.h"
 #include <iostream>
 
 using json = nlohmann::json;
@@ -57,6 +59,7 @@ void HttpServer::register_routes() {
     register_facility_routes();
     register_diary_routes();
     register_food_routes();
+    register_aigc_routes();
     std::cout << "[Server] All routes registered." << std::endl;
 }
 
@@ -213,34 +216,7 @@ void HttpServer::register_common_routes() {
         res.set_content(Response::ok("Server is running").dump(), "application/json");
     });
 
-    // 调试端点：直接查数据库验证数据
-    server_.Get("/api/debug/db", [](const httplib::Request&, httplib::Response& res) {
-        json debug;
-        auto& db = Database::get();
-        int spot_count = 0;
-        db.query("SELECT COUNT(*) FROM scenic_spots", [&spot_count](int cols, char** vals, char**) {
-            spot_count = std::stoi(vals[0]);
-            return false;
-        });
-        debug["spot_count"] = spot_count;
-
-        json spots = json::array();
-        db.query("SELECT id, name, type, popularity, rating FROM scenic_spots ORDER BY popularity DESC LIMIT 5",
-            [&spots](int cols, char** vals, char**) {
-                json s;
-                s["id"] = std::stoi(vals[0]);
-                s["name"] = vals[1] ? vals[1] : "";
-                s["type"] = vals[2] ? vals[2] : "";
-                s["popularity"] = std::stoi(vals[3]);
-                s["rating"] = std::stod(vals[4]);
-                spots.push_back(s);
-                return true;
-            });
-        debug["top_spots"] = spots;
-        res.set_content(Response::ok(debug).dump(), "application/json");
-    });
-
-    server_.Get("/api", [](const httplib::Request&, httplib::Response& res) {
+    server_.Get("/api",[](const httplib::Request&, httplib::Response& res) {
         json info;
         info["name"] = "Smart Tourism System API";
         info["version"] = "1.0.0";
@@ -249,7 +225,8 @@ void HttpServer::register_common_routes() {
             {{"name", "路线规划"}, {"prefix", "/api/route"}},
             {{"name", "场所查询"}, {"prefix", "/api/facilities"}},
             {{"name", "旅游日记"}, {"prefix", "/api/diaries"}},
-            {{"name", "美食推荐"}, {"prefix", "/api/foods"}}
+            {{"name", "美食推荐"}, {"prefix", "/api/foods"}},
+            {{"name", "AIGC图生视频"}, {"prefix", "/api/aigc"}}
         };
         res.set_content(Response::ok(info).dump(), "application/json");
     });
@@ -427,22 +404,15 @@ void HttpServer::register_spot_routes() {
             int page = page_str.empty() ? 1 : std::stoi(page_str);
             std::string size_str = req.get_param_value("page_size");
             int page_size = size_str.empty() ? 20 : std::stoi(size_str);
-            json result = service::RecommendService::get_recommendations(
-                sort_by, page_size, -1, type, category);
-            // 同样解包：data=数组，total=数字
-            json resp;
-            if (result.contains("error")) {
-                resp["code"] = 500;
-                resp["message"] = result["error"];
-                resp["data"] = json::array();
-                resp["total"] = 0;
-            } else {
-                resp["code"] = 200;
-                resp["message"] = "success";
-                resp["data"] = result.value("data", json::array());
-                resp["total"] = result.value("total", 0);
-            }
-            res.set_content(resp.dump(), "application/json");
+            if (page < 1) page = 1;
+            if (page_size < 1) page_size = 20;
+            if (page_size > 100) page_size = 100;
+
+            json items = repository::SpotRepo::get_all(
+                page, page_size, sort_by, order, type, category);
+            int total = repository::SpotRepo::count(type, category);
+            res.set_content(Response::paginated(items, total, page, page_size).dump(),
+                            "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
@@ -485,6 +455,40 @@ void HttpServer::register_route_routes() {
             int area_id = std::stoi(req.matches[1]);
             json result = service::RouteService::get_graph_data(area_id);
             res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+
+    server_.Get("/api/route/indoor/buildings", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string area = req.get_param_value("area_id");
+            if (area.empty()) {
+                res.set_content(Response::bad_request("area_id is required").dump(), "application/json");
+                return;
+            }
+            json result = service::IndoorRouteService::get_buildings(std::stoi(area));
+            res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+
+    server_.Get(R"(/api/route/indoor/graph/(\d+))", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json result = service::IndoorRouteService::get_graph(std::stoi(req.matches[1]));
+            res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+
+    server_.Post("/api/route/indoor", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json result = service::IndoorRouteService::plan(json::parse(req.body));
+            res.set_content(Response::ok(result).dump(), "application/json");
+        } catch (const json::parse_error&) {
+            res.set_content(Response::bad_request("Invalid JSON").dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
@@ -537,22 +541,19 @@ void HttpServer::register_diary_routes() {
             std::string dest_str = req.get_param_value("destination_id");
             int dest_id = dest_str.empty() ? -1 : std::stoi(dest_str);
 
+            if (page < 1) page = 1;
+            if (page_size < 1) page_size = 20;
+            if (page_size > 100) page_size = 100;
+
             json result = service::DiaryService::get_diaries(page, page_size, sort_by, order, dest_id);
-            json resp;
-            resp["code"] = 200;
-            resp["message"] = "success";
-            // result 可能是数组（正常）或含 error 的对象
             if (result.is_array()) {
-                resp["data"] = result;
-                resp["total"] = static_cast<int>(result.size());
-                resp["page"] = page;
-                resp["page_size"] = page_size;
+                int total = repository::DiaryRepo::count(dest_id);
+                res.set_content(Response::paginated(result, total, page, page_size).dump(),
+                                "application/json");
             } else {
-                resp["data"] = json::array();
-                resp["total"] = 0;
-                if (result.contains("error")) resp["message"] = result["error"];
+                std::string message = result.value("error", std::string("Failed to load diaries"));
+                res.set_content(Response::server_error(message).dump(), "application/json");
             }
-            res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
@@ -758,7 +759,7 @@ void HttpServer::register_diary_routes() {
 // 美食推荐路由
 // ============================================================
 void HttpServer::register_food_routes() {
-    // GET /api/foods/recommend?area_id=1&sort_by=rating&limit=10&cuisine=川菜
+    // GET /api/foods/recommend?area_id=1&sort_by=rating&limit=10&cuisine=川菜&ref_x=500&ref_y=350
     server_.Get("/api/foods/recommend", [](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string area_id_str = req.get_param_value("area_id");
@@ -772,21 +773,28 @@ void HttpServer::register_food_routes() {
             std::string cuisine = req.get_param_value("cuisine");
             std::string limit_str = req.get_param_value("limit");
             int limit = limit_str.empty() ? 10 : std::stoi(limit_str);
+            double ref_x = -1, ref_y = -1;
+            std::string rx = req.get_param_value("ref_x");
+            std::string ry = req.get_param_value("ref_y");
+            if (!rx.empty()) ref_x = std::stod(rx);
+            if (!ry.empty()) ref_y = std::stod(ry);
 
-            json result = service::FoodService::get_recommendations(area_id, limit, sort_by, cuisine);
+            json result = service::FoodService::get_recommendations(area_id, limit, sort_by, cuisine, ref_x, ref_y);
             json resp;
             resp["code"] = 200;
             resp["message"] = "success";
             resp["data"] = result.value("data", json::array());
             resp["total"] = result.value("total", 0);
             resp["limit"] = result.value("limit", 0);
+            if (result.contains("ref_x")) resp["ref_x"] = result["ref_x"];
+            if (result.contains("ref_y")) resp["ref_y"] = result["ref_y"];
             res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }
     });
 
-    // GET /api/foods/search?area_id=1&keyword=宫保鸡丁&limit=20
+    // GET /api/foods/search?area_id=1&keyword=宫保鸡丁&limit=20&sort_by=similarity&ref_x=500&ref_y=350
     server_.Get("/api/foods/search", [](const httplib::Request& req, httplib::Response& res) {
         try {
             std::string area_id_str = req.get_param_value("area_id");
@@ -798,14 +806,22 @@ void HttpServer::register_food_routes() {
             std::string keyword = req.get_param_value("keyword");
             std::string limit_str = req.get_param_value("limit");
             int limit = limit_str.empty() ? 20 : std::stoi(limit_str);
+            std::string sort_by = req.get_param_value("sort_by");
+            if (sort_by.empty()) sort_by = "similarity";
+            double ref_x = -1, ref_y = -1;
+            std::string rx = req.get_param_value("ref_x");
+            std::string ry = req.get_param_value("ref_y");
+            if (!rx.empty()) ref_x = std::stod(rx);
+            if (!ry.empty()) ref_y = std::stod(ry);
 
-            json result = service::FoodService::search_foods(area_id, keyword, limit);
+            json result = service::FoodService::search_foods(area_id, keyword, limit, sort_by, ref_x, ref_y);
             json resp;
             resp["code"] = 200;
             resp["message"] = "success";
             resp["data"] = result.value("data", json::array());
             resp["total"] = result.value("total", 0);
             resp["mode"] = result.value("mode", "");
+            resp["sort_by"] = result.value("sort_by", sort_by);
             res.set_content(resp.dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
@@ -840,6 +856,34 @@ void HttpServer::register_food_routes() {
             resp["page"] = page;
             resp["page_size"] = page_size;
             res.set_content(resp.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(Response::server_error(e.what()).dump(), "application/json");
+        }
+    });
+}
+
+// ============================================================
+// AIGC 图生视频路由
+// ============================================================
+void HttpServer::register_aigc_routes() {
+    // POST /api/aigc/generate-video
+    server_.Post("/api/aigc/generate-video", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            json result = service::AigcService::generate_video(body);
+            json resp;
+            if (result.contains("error")) {
+                resp["code"] = 400;
+                resp["message"] = result["error"];
+                resp["data"] = nullptr;
+            } else {
+                resp["code"] = 200;
+                resp["message"] = "success";
+                resp["data"] = result;
+            }
+            res.set_content(resp.dump(), "application/json");
+        } catch (const json::parse_error&) {
+            res.set_content(Response::bad_request("Invalid JSON").dump(), "application/json");
         } catch (const std::exception& e) {
             res.set_content(Response::server_error(e.what()).dump(), "application/json");
         }

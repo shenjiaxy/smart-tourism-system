@@ -227,6 +227,157 @@
                  class="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:border-green-500"
                  style="border-color: var(--color-primary-lightest)" />
         </div>
+        <div>
+          <label class="block text-xs font-medium mb-1" style="color: var(--color-text-secondary)">图片链接</label>
+          <div class="media-input-row">
+            <input v-model="diaryForm.imageUrl" type="url" placeholder="https://..."
+                   @keyup.enter="addImageUrl" />
+            <button title="添加图片" @click="addImageUrl"><Plus :size="17" /></button>
+            <button title="选择本地图片" @click="imageFileInput?.click()"><Upload :size="17" /></button>
+            <input ref="imageFileInput" class="media-file-input" type="file" accept="image/*" multiple @change="handleImageFiles" />
+          </div>
+          <div v-if="diaryForm.images.length" class="media-preview-grid">
+            <div v-for="(image, index) in diaryForm.images" :key="image" class="media-preview-item">
+              <img :src="image" alt="日记图片预览" />
+              <button title="移除图片" @click="diaryForm.images.splice(index, 1)"><X :size="14" /></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium mb-1" style="color: var(--color-text-secondary)">视频链接</label>
+          <div class="media-input-row">
+            <input v-model="diaryForm.videoUrl" type="url" placeholder="https://...mp4"
+                   @keyup.enter="addVideoUrl" />
+            <button title="添加视频" @click="addVideoUrl"><Plus :size="17" /></button>
+            <button title="选择本地视频" @click="videoFileInput?.click()"><Upload :size="17" /></button>
+            <input ref="videoFileInput" class="media-file-input" type="file" accept="video/*" @change="handleVideoFile" />
+          </div>
+          <div v-if="diaryForm.videos.length" class="video-link-list">
+            <span v-for="(video, index) in diaryForm.videos" :key="video">
+              <Video :size="14" />{{ mediaDisplayName(video, index) }}
+              <button title="移除视频" @click="diaryForm.videos.splice(index, 1)"><X :size="13" /></button>
+            </span>
+          </div>
+        </div>
+
+        <!-- AIGC 图生视频 -->
+        <div class="aigc-section">
+          <button
+            class="aigc-toggle"
+            @click="aigcPanelVisible = !aigcPanelVisible"
+          >
+            <Sparkles :size="16" />
+            <span>AIGC 图生视频</span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"
+              :style="{ transform: aigcPanelVisible ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }"
+            >
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+
+          <div v-if="aigcPanelVisible" class="aigc-panel">
+            <div class="aigc-field">
+              <label>选择图片</label>
+              <select v-model="aigcSelectedImageIndex" class="aigc-select">
+                <option :value="-1" disabled>-- 请选择已上传的图片 --</option>
+                <option v-for="(img, idx) in diaryForm.images" :key="idx" :value="idx">
+                  图片 {{ idx + 1 }}
+                </option>
+              </select>
+              <span v-if="diaryForm.images.length === 0" class="aigc-hint">
+                请先在"图片链接"区域上传图片
+              </span>
+            </div>
+
+            <div class="aigc-config-group">
+              <div class="aigc-config-header">
+                <span>API 配置</span>
+                <span class="aigc-config-saved" v-if="aigcConfigLoaded">已从本地加载</span>
+              </div>
+              <div class="aigc-field">
+                <label>API 地址</label>
+                <input
+                  v-model="aigcConfig.api_base_url"
+                  type="url"
+                  placeholder="https://api.example.com"
+                  class="aigc-input"
+                  @change="saveAigcConfig"
+                />
+              </div>
+              <div class="aigc-field">
+                <label>API Key</label>
+                <input
+                  v-model="aigcConfig.api_key"
+                  type="password"
+                  placeholder="sk-..."
+                  class="aigc-input"
+                  @change="saveAigcConfig"
+                />
+              </div>
+              <div class="aigc-field">
+                <label>模型名称</label>
+                <input
+                  v-model="aigcConfig.model"
+                  type="text"
+                  placeholder="cogvideo-3"
+                  class="aigc-input"
+                  @change="saveAigcConfig"
+                />
+              </div>
+            </div>
+
+            <div class="aigc-field">
+              <label>视频描述提示词</label>
+              <textarea
+                v-model="aigcPrompt"
+                rows="3"
+                placeholder="描述你想要的视频效果，例如：阳光明媚的风景区，镜头缓慢推进，4K画质..."
+                class="aigc-textarea"
+              ></textarea>
+            </div>
+
+            <button
+              class="aigc-generate-btn"
+              :disabled="aigcLoading || aigcSelectedImageIndex < 0"
+              @click="handleGenerateVideo"
+            >
+              <svg v-if="aigcLoading" class="aigc-spinner" viewBox="0 0 24 24" width="16" height="16">
+                <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" opacity="0.2" />
+                <path d="M21 12a9 9 0 0 0-11.2-8.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                </path>
+              </svg>
+              <Sparkles v-else :size="16" />
+              {{ aigcLoading ? '生成中，请耐心等待...' : '生成视频' }}
+            </button>
+
+            <div v-if="aigcError" class="aigc-error">{{ aigcError }}</div>
+
+            <div v-if="aigcResult" class="aigc-result">
+              <div class="aigc-result-label">生成结果</div>
+              <video
+                v-if="aigcResult.video_url"
+                :src="aigcResult.video_url"
+                controls
+                class="aigc-video-preview"
+              />
+              <div v-else class="aigc-raw-response">
+                <pre>{{ JSON.stringify(aigcResult, null, 2) }}</pre>
+              </div>
+              <button
+                v-if="aigcResult.video_url"
+                class="aigc-add-btn"
+                @click="addAigcVideoToDiary"
+              >
+                <Plus :size="14" />
+                添加到日记视频
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       <template #footer>
         <div class="flex gap-3">
@@ -284,6 +435,10 @@
         <div v-if="currentDiary.images?.length" class="flex gap-2 overflow-x-auto mb-4">
           <img v-for="(img, i) in currentDiary.images" :key="i" :src="img"
                class="w-32 h-24 rounded-lg object-cover shrink-0" />
+        </div>
+
+        <div v-if="currentDiary.videos?.length" class="diary-video-list">
+          <video v-for="video in currentDiary.videos" :key="video" :src="video" controls preload="metadata" />
         </div>
 
         <!-- 标签 -->
@@ -348,16 +503,19 @@
         </div>
       </div>
     </el-dialog>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { Plus, Sparkles, Upload, Video, X } from 'lucide-vue-next'
 import {
   getDiaryList, getDiaryDetail, createDiary, updateDiary, deleteDiary,
   searchDiaries, compressDiary, decompressDiary, rateDiary,
 } from '@/api/diary'
+import { generateVideo } from '@/api/aigc'
 import type { Diary, DiarySearchResult } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 
@@ -381,9 +539,99 @@ const editingDiary = ref<Diary | null>(null)
 const currentDiary = ref<Diary | null>(null)
 const userRating = ref(0)
 const savingDiary = ref(false)
-
+const imageFileInput = ref<HTMLInputElement | null>(null)
+const videoFileInput = ref<HTMLInputElement | null>(null)
 // 压缩
 const compressResult = ref<{ original_size: number; compressed_size: number; compression_ratio: number } | null>(null)
+
+// AIGC 图生视频
+const aigcPanelVisible = ref(false)
+const aigcSelectedImageIndex = ref(-1)
+const aigcPrompt = ref('')
+const aigcLoading = ref(false)
+const aigcError = ref('')
+const aigcResult = ref<{ video_url?: string; raw_response?: any; raw_body?: string } | null>(null)
+const aigcConfigLoaded = ref(false)
+const aigcConfig = reactive({
+  api_base_url: '',
+  api_key: '',
+  model: 'cogvideo-3',
+})
+
+function loadAigcConfig() {
+  try {
+    const saved = localStorage.getItem('aigc_config')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      aigcConfig.api_base_url = parsed.api_base_url || ''
+      aigcConfig.api_key = parsed.api_key || ''
+      aigcConfig.model = parsed.model || 'cogvideo-3'
+      aigcConfigLoaded.value = true
+    }
+  } catch { /* ignore */ }
+}
+
+function saveAigcConfig() {
+  localStorage.setItem('aigc_config', JSON.stringify({
+    api_base_url: aigcConfig.api_base_url,
+    api_key: aigcConfig.api_key,
+    model: aigcConfig.model,
+  }))
+}
+
+async function handleGenerateVideo() {
+  aigcError.value = ''
+  aigcResult.value = null
+
+  if (aigcSelectedImageIndex.value < 0 || !diaryForm.images[aigcSelectedImageIndex.value]) {
+    aigcError.value = '请先选择一张图片'
+    return
+  }
+
+  if (!aigcConfig.api_base_url || !aigcConfig.api_key) {
+    aigcError.value = '请填写 API 地址和 API Key'
+    return
+  }
+
+  if (!aigcPrompt.value.trim()) {
+    aigcError.value = '请输入视频描述提示词'
+    return
+  }
+
+  try {
+    aigcLoading.value = true
+    const image = diaryForm.images[aigcSelectedImageIndex.value]
+    const res = await generateVideo({
+      image,
+      prompt: aigcPrompt.value,
+      api_base_url: aigcConfig.api_base_url,
+      api_key: aigcConfig.api_key,
+      model: aigcConfig.model,
+    })
+    const data = res.data as any
+    if (data?.success) {
+      aigcResult.value = data
+      ElMessage.success('视频生成成功！')
+    } else {
+      aigcError.value = data?.raw_response?.detail || data?.message || '生成失败，请检查配置'
+    }
+  } catch (e: any) {
+    aigcError.value = e?.message || '请求失败，请检查网络和 API 配置'
+  } finally {
+    aigcLoading.value = false
+  }
+}
+
+function addAigcVideoToDiary() {
+  if (!aigcResult.value?.video_url) return
+  const url = aigcResult.value.video_url
+  if (!diaryForm.videos.includes(url)) {
+    diaryForm.videos.push(url)
+    ElMessage.success('视频已添加到日记')
+  } else {
+    ElMessage.warning('该视频已在列表中')
+  }
+}
 
 const sortOptions = [
   { label: '最新', value: 'created_at' },
@@ -396,6 +644,10 @@ const diaryForm = reactive({
   content: '',
   destination: '',
   tags: '',
+  imageUrl: '',
+  videoUrl: '',
+  images: [] as string[],
+  videos: [] as string[],
 })
 
 function parseTags(value: unknown): string[] {
@@ -410,12 +662,23 @@ function parseTags(value: unknown): string[] {
   return value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
 }
 
+function parseMediaList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean)
+  if (typeof value !== 'string' || !value.trim()) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []
+  } catch {
+    return value.split(/[,\n]/).map(item => item.trim()).filter(Boolean)
+  }
+}
+
 function normalizeDiary(item: any): Diary {
   return {
     ...item,
     tags: parseTags(item.tags),
-    images: Array.isArray(item.images) ? item.images : [],
-    videos: Array.isArray(item.videos) ? item.videos : [],
+    images: parseMediaList(item.images),
+    videos: parseMediaList(item.videos),
     is_compressed: Boolean(item.is_compressed),
   }
 }
@@ -465,8 +728,8 @@ async function handleSearch() {
       diary_id: item.diary_id ?? item.id,
       score: item.score ?? item.relevance_score ?? 1,
       tags: Array.isArray(item.tags) ? item.tags : parseTags(item.tags),
-      images: Array.isArray(item.images) ? item.images : [],
-      videos: Array.isArray(item.videos) ? item.videos : [],
+      images: parseMediaList(item.images),
+      videos: parseMediaList(item.videos),
     }))
   } catch (e) {
     console.error('搜索日记失败:', e)
@@ -479,6 +742,16 @@ function openCreateDialog() {
   diaryForm.content = ''
   diaryForm.destination = ''
   diaryForm.tags = ''
+  diaryForm.imageUrl = ''
+  diaryForm.videoUrl = ''
+  diaryForm.images = []
+  diaryForm.videos = []
+  aigcPanelVisible.value = false
+  aigcSelectedImageIndex.value = -1
+  aigcPrompt.value = ''
+  aigcError.value = ''
+  aigcResult.value = null
+  loadAigcConfig()
   createDialogVisible.value = true
 }
 
@@ -489,7 +762,82 @@ function openEditDialog(diary: Diary) {
   diaryForm.content = diary.content
   diaryForm.destination = diary.destination
   diaryForm.tags = Array.isArray(diary.tags) ? diary.tags.join(', ') : ''
+  diaryForm.imageUrl = ''
+  diaryForm.videoUrl = ''
+  diaryForm.images = [...(diary.images || [])]
+  diaryForm.videos = [...(diary.videos || [])]
+  aigcPanelVisible.value = false
+  aigcSelectedImageIndex.value = -1
+  aigcPrompt.value = ''
+  aigcError.value = ''
+  aigcResult.value = null
+  loadAigcConfig()
   createDialogVisible.value = true
+}
+
+function isMediaUrl(value: string) {
+  return /^(https?:\/\/|data:image\/|\/)/i.test(value.trim())
+}
+
+function addImageUrl() {
+  const value = diaryForm.imageUrl.trim()
+  if (!value) return
+  if (!isMediaUrl(value)) {
+    ElMessage.warning('请输入有效的图片链接')
+    return
+  }
+  if (!diaryForm.images.includes(value)) diaryForm.images.push(value)
+  diaryForm.imageUrl = ''
+}
+
+function addVideoUrl() {
+  const value = diaryForm.videoUrl.trim()
+  if (!value) return
+  if (!isMediaUrl(value)) {
+    ElMessage.warning('请输入有效的视频链接')
+    return
+  }
+  if (!diaryForm.videos.includes(value)) diaryForm.videos.push(value)
+  diaryForm.videoUrl = ''
+}
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handleImageFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  for (const file of files) {
+    if (file.size > 3 * 1024 * 1024) {
+      ElMessage.warning(`${file.name} 超过 3MB，已跳过`)
+      continue
+    }
+    diaryForm.images.push(await readAsDataUrl(file))
+  }
+  input.value = ''
+}
+
+async function handleVideoFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('视频超过 10MB，请选择较短的演示片段')
+    input.value = ''
+    return
+  }
+  diaryForm.videos.push(await readAsDataUrl(file))
+  input.value = ''
+}
+
+function mediaDisplayName(value: string, index: number) {
+  return value.startsWith('data:') ? `本地视频 ${index + 1}` : value
 }
 
 async function handleSaveDiary() {
@@ -511,6 +859,8 @@ async function handleSaveDiary() {
         content: diaryForm.content,
         destination: diaryForm.destination,
         tags,
+        images: diaryForm.images,
+        videos: diaryForm.videos,
       })
       ElMessage.success('日记已更新')
     } else {
@@ -520,6 +870,8 @@ async function handleSaveDiary() {
         content: diaryForm.content,
         destination: diaryForm.destination,
         tags: JSON.stringify(tags),
+        images: diaryForm.images,
+        videos: diaryForm.videos,
       })
       ElMessage.success('日记已发布')
     }
@@ -602,6 +954,7 @@ async function handleDecompress() {
 onMounted(() => {
   loadDiaries()
 })
+
 </script>
 
 <style scoped>
@@ -614,5 +967,264 @@ onMounted(() => {
 }
 .sort-default:hover {
   color: var(--color-primary);
+}
+
+.media-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px 42px;
+  gap: 8px;
+}
+
+.media-file-input {
+  display: none;
+}
+
+.media-input-row input {
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--color-primary-lightest);
+  border-radius: 6px;
+  outline: none;
+}
+
+.media-input-row button,
+.media-preview-item button,
+.video-link-list button {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--color-rule);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.media-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.media-preview-item {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--color-rule);
+  border-radius: 6px;
+}
+
+.media-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+.media-preview-item button { position: absolute; top: 4px; right: 4px; width: 25px; height: 25px; border-radius: 50%; }
+
+.video-link-list { display: grid; gap: 6px; margin-top: 9px; }
+.video-link-list span { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; padding: 7px 9px; border: 1px solid var(--color-rule); font-size: 11px; overflow: hidden; }
+.video-link-list button { width: 24px; height: 24px; }
+
+.diary-video-list { display: grid; gap: 10px; margin-bottom: 16px; }
+.diary-video-list video { width: 100%; max-height: 320px; background: #111; border-radius: 6px; }
+
+@media (max-width: 720px) {
+  .media-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ========== AIGC 图生视频 ========== */
+.aigc-section {
+  border: 1px solid var(--color-primary-lightest);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.aigc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: linear-gradient(135deg, #f0f7ff, #f5f0ff);
+  color: #5b3cc4;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.aigc-toggle:hover {
+  background: linear-gradient(135deg, #e8efff, #ede4ff);
+}
+
+.aigc-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-top: 1px solid var(--color-primary-lightest);
+}
+
+.aigc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aigc-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.aigc-input,
+.aigc-select,
+.aigc-textarea {
+  padding: 8px 12px;
+  border: 1px solid var(--color-primary-lightest);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+
+.aigc-input:focus,
+.aigc-select:focus,
+.aigc-textarea:focus {
+  border-color: var(--color-primary);
+}
+
+.aigc-textarea {
+  resize: none;
+}
+
+.aigc-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.aigc-config-group {
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.aigc-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.aigc-config-saved {
+  font-size: 10px;
+  color: #2e7d32;
+  background: #e8f5e9;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.aigc-generate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+.aigc-generate-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.aigc-generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aigc-spinner {
+  animation: aigc-spin 1s linear infinite;
+}
+
+@keyframes aigc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.aigc-error {
+  padding: 10px 14px;
+  background: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+  color: #cf1322;
+  font-size: 13px;
+}
+
+.aigc-result {
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.aigc-result-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #389e0d;
+}
+
+.aigc-video-preview {
+  width: 100%;
+  max-height: 280px;
+  background: #111;
+  border-radius: 8px;
+}
+
+.aigc-raw-response {
+  max-height: 200px;
+  overflow: auto;
+  background: #fafafa;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.aigc-raw-response pre {
+  margin: 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.aigc-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid #389e0d;
+  border-radius: 8px;
+  background: white;
+  color: #389e0d;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.aigc-add-btn:hover {
+  background: #f6ffed;
 }
 </style>

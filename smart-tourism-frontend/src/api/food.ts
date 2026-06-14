@@ -7,6 +7,8 @@ export function getFoodRecommendations(params: {
   limit?: number
   sort_by?: string
   cuisine?: string
+  ref_x?: number
+  ref_y?: number
 }) {
   return get<Food[]>('/api/foods/recommend', params)
 }
@@ -16,6 +18,9 @@ export function searchFoods(params: {
   area_id: number
   keyword: string
   limit?: number
+  sort_by?: string
+  ref_x?: number
+  ref_y?: number
 }) {
   return get<FuzzyMatchResult[]>('/api/foods/search', params)
 }

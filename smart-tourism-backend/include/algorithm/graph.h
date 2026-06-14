@@ -54,20 +54,23 @@ struct GraphEdge {
     int to;             // 目标节点ID
     double distance;    // 物理距离（米）
     double time;        // 通行时间（秒），基于距离和拥挤度计算
-    double congestion;  // 拥挤度 [0.0, 1.0]，0=畅通，1=极度拥挤
+    double congestion;  // 通行系数 (0, 1]，真实速度 = 通行系数 * 理想速度
+    double ideal_speed; // 理想速度（米/秒）
     int transport;      // 交通工具类型: 0=步行, 1=自行车, 2=电瓶车
 
-    GraphEdge() : to(-1), distance(0), time(0), congestion(0.5), transport(0) {}
-    GraphEdge(int _to, double _dist, double _congestion = 0.5, int _trans = 0)
-        : to(_to), distance(_dist), congestion(_congestion), transport(_trans) {
-        // 时间 = 距离 / (速度 * (1 - 拥挤度*0.5))
-        // 步行速度 1.2m/s, 自行车 3.5m/s, 电瓶车 5.0m/s
-        double speed = 1.2;
-        if (_trans == 1) speed = 3.5;
-        else if (_trans == 2) speed = 5.0;
-        double factor = 1.0 - _congestion * 0.5;  // 拥挤度越高，速度越慢
-        if (factor < 0.2) factor = 0.2;            // 最低20%速度
-        time = _dist / (speed * factor);
+    GraphEdge()
+        : to(-1), distance(0), time(0), congestion(0.5), ideal_speed(1.2), transport(0) {}
+    GraphEdge(int _to, double _dist, double _congestion = 0.5, int _trans = 0,
+              double _ideal_speed = 0.0)
+        : to(_to), distance(_dist), congestion(_congestion), ideal_speed(_ideal_speed),
+          transport(_trans) {
+        if (ideal_speed <= 0.0) {
+            ideal_speed = (_trans == 1) ? 3.5 : ((_trans == 2) ? 5.0 : 1.2);
+        }
+        double factor = congestion;
+        if (factor <= 0.0) factor = 0.05;
+        if (factor > 1.0) factor = 1.0;
+        time = _dist / (ideal_speed * factor);
     }
 };
 
@@ -224,13 +227,14 @@ public:
 
     /// 添加边（通过内部索引）
     /// 返回边的内部索引
-    void add_edge(int from, int to, double distance, double congestion = 0.5, int transport = 0) {
+    void add_edge(int from, int to, double distance, double congestion = 0.5,
+                  int transport = 0, double ideal_speed = 0.0) {
         if (from < 0 || from >= nodes_.size() || to < 0 || to >= nodes_.size()) {
             throw std::out_of_range("Graph::add_edge: node index out of range");
         }
-        adj_[from].push_back(GraphEdge(to, distance, congestion, transport));
+        adj_[from].push_back(GraphEdge(to, distance, congestion, transport, ideal_speed));
         if (type_ == Type::UNDIRECTED) {
-            adj_[to].push_back(GraphEdge(from, distance, congestion, transport));
+            adj_[to].push_back(GraphEdge(from, distance, congestion, transport, ideal_speed));
         }
     }
 

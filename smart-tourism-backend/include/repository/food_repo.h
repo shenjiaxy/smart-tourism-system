@@ -35,12 +35,14 @@ public:
         else col = "rating";
 
         std::ostringstream sql;
-        sql << "SELECT id, area_id, name, cuisine, restaurant, rating, rating_count, "
-            << "popularity, node_id, price, description, image "
-            << "FROM foods WHERE area_id = " << area_id;
+        sql << "SELECT f.id, f.area_id, f.name, f.cuisine, f.restaurant, f.rating, f.rating_count, "
+            << "f.popularity, f.node_id, f.price, f.description, f.image, "
+            << "COALESCE(n.pos_x, 0), COALESCE(n.pos_y, 0) "
+            << "FROM foods f LEFT JOIN nodes n ON f.node_id = n.id "
+            << "WHERE f.area_id = " << area_id;
 
         if (!cuisine.empty()) {
-            sql << " AND cuisine = '" << escape_sql(cuisine) << "'";
+            sql << " AND f.cuisine = '" << escape_sql(cuisine) << "'";
         }
 
         sql << " ORDER BY " << col << " DESC";
@@ -61,6 +63,8 @@ public:
             item["price"]       = values[9] ? std::stod(values[9]) : 0.0;
             item["description"] = values[10] ? values[10] : "";
             item["image"]       = values[11] ? values[11] : "";
+            item["pos_x"]       = values[12] ? std::stod(values[12]) : 0.0;
+            item["pos_y"]       = values[13] ? std::stod(values[13]) : 0.0;
             result.push_back(item);
             return true;
         });
@@ -83,15 +87,19 @@ public:
         std::string escaped = escape_sql(keyword);
 
         std::ostringstream sql;
-        sql << "SELECT id, area_id, name, cuisine, restaurant, rating, rating_count, "
-            << "popularity, node_id, price, description, image "
-            << "FROM foods WHERE area_id = " << area_id
-            << " AND (name LIKE '%" << escaped << "%' "
-            << "OR restaurant LIKE '%" << escaped << "%' "
-            << "OR cuisine LIKE '%" << escaped << "%') "
-            << "ORDER BY rating DESC LIMIT " << limit;
+        sql << "SELECT f.id, f.area_id, f.name, f.cuisine, f.restaurant, f.rating, f.rating_count, "
+            << "f.popularity, f.node_id, f.price, f.description, f.image, "
+            << "COALESCE(n.pos_x, 0), COALESCE(n.pos_y, 0) "
+            << "FROM foods f LEFT JOIN nodes n ON f.node_id = n.id "
+            << "WHERE f.area_id = " << area_id
+            << " AND (f.name LIKE '%" << escaped << "%' "
+            << "OR f.restaurant LIKE '%" << escaped << "%' "
+            << "OR f.cuisine LIKE '%" << escaped << "%') "
+            << "ORDER BY f.rating DESC LIMIT " << limit;
 
-        db.query(sql.str(), [&result](int cols, char** values, char**) {
+        int row_count = 0;
+        db.query(sql.str(), [&result, &row_count](int cols, char** values, char**) {
+            row_count++;
             json item;
             item["id"]          = values[0] ? std::stoi(values[0]) : 0;
             item["area_id"]     = values[1] ? std::stoi(values[1]) : 0;
@@ -105,58 +113,13 @@ public:
             item["price"]       = values[9] ? std::stod(values[9]) : 0.0;
             item["description"] = values[10] ? values[10] : "";
             item["image"]       = values[11] ? values[11] : "";
+            item["pos_x"]       = values[12] ? std::stod(values[12]) : 0.0;
+            item["pos_y"]       = values[13] ? std::stod(values[13]) : 0.0;
             result.push_back(item);
             return true;
         });
 
         return result;
-    }
-
-    /**
-     * 获取所有美食名称（用于编辑距离模糊匹配）
-     * @param area_id 所属景区/校园ID
-     * @return 名称数组，每个元素: {id, name}
-     */
-    static json get_all_names(int area_id) {
-        json result = json::array();
-        auto& db = Database::get();
-
-        std::ostringstream sql;
-        sql << "SELECT id, name FROM foods WHERE area_id = " << area_id;
-
-        db.query(sql.str(), [&result](int cols, char** values, char**) {
-            json item;
-            item["id"]   = values[0] ? std::stoi(values[0]) : 0;
-            item["name"] = values[1] ? values[1] : "";
-            result.push_back(item);
-            return true;
-        });
-
-        return result;
-    }
-
-    /**
-     * 获取某节点的位置坐标（用于距离计算）
-     * @param node_id 节点ID
-     * @return 位置对象: {id, pos_x, pos_y}，未找到时为null
-     */
-    static json get_node_position(int node_id) {
-        json result;
-        auto& db = Database::get();
-
-        std::ostringstream sql;
-        sql << "SELECT id, pos_x, pos_y FROM nodes WHERE id = " << node_id << " LIMIT 1";
-
-        bool found = false;
-        db.query(sql.str(), [&result, &found](int cols, char** values, char**) {
-            found = true;
-            result["id"]    = values[0] ? std::stoi(values[0]) : 0;
-            result["pos_x"] = values[1] ? std::stod(values[1]) : 0.0;
-            result["pos_y"] = values[2] ? std::stod(values[2]) : 0.0;
-            return false;
-        });
-
-        return found ? result : json();
     }
 
     /**

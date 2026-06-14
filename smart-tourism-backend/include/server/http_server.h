@@ -49,6 +49,9 @@ private:
     // --- 美食推荐 ---
     void register_food_routes();
 
+    // --- AIGC 图生视频 ---
+    void register_aigc_routes();
+
     // --- 通用路由 ---
     void register_common_routes();
 
