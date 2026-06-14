@@ -36,7 +36,14 @@
         :style="{ '--visual-bg': getSpotVisual(featuredSpot, 0).background }"
         @click="showDetail(featuredSpot)"
       >
-        <div class="lead-image"></div>
+        <div class="lead-image">
+          <img
+            v-if="featuredSpot.image_url || featuredSpot.image"
+            :src="featuredSpot.image_url || featuredSpot.image"
+            :alt="featuredSpot.name"
+            @error="hideBrokenImage"
+          />
+        </div>
         <div class="lead-content">
           <span>{{ featuredSpot.city }} / {{ featuredSpot.category || featuredSpot.type }}</span>
           <h2 class="editorial-heading">{{ featuredSpot.name }}</h2>
@@ -85,7 +92,7 @@
           @click="showDetail(spot)"
         >
           <div class="spot-visual">
-            <img v-if="spot.image_url || spot.image" :src="spot.image_url || spot.image" :alt="spot.name" />
+            <img v-if="spot.image_url || spot.image" :src="spot.image_url || spot.image" :alt="spot.name" @error="hideBrokenImage" />
             <div v-else class="generated-visual">
               <span>{{ spot.city }}</span>
             </div>
@@ -125,7 +132,7 @@
     <el-dialog v-model="detailVisible" :title="selectedSpot?.name" width="680px" destroy-on-close>
       <div v-if="selectedSpot" class="detail-dialog">
         <div class="detail-visual" :style="{ '--visual-bg': getSpotVisual(selectedSpot, 0).background }">
-          <img v-if="selectedSpot.image_url || selectedSpot.image" :src="selectedSpot.image_url || selectedSpot.image" :alt="selectedSpot.name" />
+          <img v-if="selectedSpot.image_url || selectedSpot.image" :src="selectedSpot.image_url || selectedSpot.image" :alt="selectedSpot.name" @error="hideBrokenImage" />
         </div>
         <div class="detail-grid">
           <div><span>评分</span><strong>{{ selectedSpot.rating?.toFixed(1) }}</strong></div>
@@ -177,6 +184,10 @@ const sortOptions = [
 
 const featuredSpot = computed(() => spots.value[0])
 const displaySpots = computed(() => spots.value.slice(featuredSpot.value ? 1 : 0))
+
+function hideBrokenImage(event: Event) {
+  ;(event.currentTarget as HTMLImageElement).style.display = 'none'
+}
 
 async function loadSpots() {
   loading.value = true
@@ -338,7 +349,6 @@ onMounted(loadSpots)
   cursor: pointer;
 }
 
-.lead-image,
 .generated-visual::before,
 .detail-visual::after {
   position: absolute;
@@ -347,6 +357,24 @@ onMounted(loadSpots)
   background:
     radial-gradient(circle at 26% 22%, rgba(255, 253, 247, 0.28), transparent 13%),
     linear-gradient(0deg, rgba(0, 0, 0, 0.72), transparent 64%);
+}
+
+.lead-image {
+  position: absolute;
+  inset: 0;
+}
+
+.lead-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lead-image::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.76), rgba(0, 0, 0, 0.08) 72%);
 }
 
 .lead-content {
