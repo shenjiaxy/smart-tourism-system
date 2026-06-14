@@ -9,7 +9,7 @@ const buildDataDir = join(__dirname, '..', 'smart-tourism-backend', 'build', 'bi
 
 // ==================== Constants ====================
 const AREA_START_ID = 1
-const AREA_COUNT = 30
+const AREA_COUNT = 210
 const CANVAS_W = 1000
 const CANVAS_H = 700
 const METERS_PER_UNIT = 1.2
@@ -114,6 +114,50 @@ const campusThemes = [
   '财经大学', '外国语大学', '艺术学院', '邮电大学', '农业大学',
 ]
 const categories = ['自然', '历史', '文化', '现代', '综合']
+
+const spotImages = {
+  campus: '/images/demo/spot-campus.webp',
+  palace: '/images/demo/spot-palace.webp',
+  mountain: '/images/demo/spot-mountain.webp',
+  garden: '/images/demo/spot-garden.webp',
+  museum: '/images/demo/spot-museum.webp',
+}
+
+const foodImages = {
+  spicy: '/images/demo/food-spicy.webp',
+  dimsum: '/images/demo/food-dimsum.webp',
+  noodles: '/images/demo/food-noodles.webp',
+  hotpot: '/images/demo/food-hotpot.webp',
+  roastDuck: '/images/demo/food-roast-duck.webp',
+}
+
+function getSpotImage(profile) {
+  if (profile.type === 'campus') return spotImages.campus
+  if (profile.category === '自然') return profile.areaId % 2 === 0 ? spotImages.mountain : spotImages.garden
+  if (profile.category === '现代') return spotImages.museum
+  if (profile.category === '综合') return profile.areaId % 2 === 0 ? spotImages.garden : spotImages.museum
+  return profile.areaId % 3 === 0 ? spotImages.garden : spotImages.palace
+}
+
+function getFoodImage(name, cuisine, index) {
+  const key = `${name}${cuisine}`
+  if (key.includes('火锅') || key.includes('香锅')) return foodImages.hotpot
+  if (key.includes('烤鸭') || cuisine === '京菜') return foodImages.roastDuck
+  if (key.includes('面') || cuisine === '面食') return foodImages.noodles
+  if (key.includes('粤') || key.includes('虾饺') || key.includes('蒸')) return foodImages.dimsum
+  if (key.includes('川') || key.includes('湘') || key.includes('辣') || key.includes('酸菜')) return foodImages.spicy
+  return Object.values(foodImages)[index % Object.keys(foodImages).length]
+}
+
+function getDiaryImages(profile, index) {
+  if (profile.type === 'campus') {
+    return ['/images/demo/diary-campus.webp', spotImages.campus]
+  }
+  if (profile.category === '自然' || index % 3 === 0) {
+    return ['/images/demo/diary-park.webp', spotImages.mountain]
+  }
+  return ['/images/demo/diary-garden.webp', getSpotImage(profile)]
+}
 
 // Real scenic spots for areas 1-15
 const realSpots = [
@@ -559,6 +603,7 @@ function generateFoods(nodes, profile) {
       nodeId: node.id || nid(areaId, node.idx),
       price,
       description: `${foodTemplate[1]}风味，${areaName}人气美食`,
+      image: getFoodImage(foodTemplate[0], foodTemplate[1], f),
     })
   }
   return foods
@@ -578,7 +623,7 @@ function generateDiaries(profile) {
       content: template.content,
       destination: areaName, destinationId: areaId,
       tags: JSON.stringify(['旅游', '休闲', areaName]),
-      images: JSON.stringify([]), videos: JSON.stringify([]),
+      images: JSON.stringify(getDiaryImages(profile, d)), videos: JSON.stringify([]),
       popularity: 10 + Math.floor(seededRandom(areaId + d * 41) * 200),
       avgRating: (3.5 + seededRandom(areaId + d * 43) * 1.5).toFixed(1),
       ratingCount: Math.floor(seededRandom(areaId + d * 47) * 10),
@@ -744,8 +789,8 @@ function generateSQL() {
     const profile = makeAreaProfile(i)
 
     sql.push(
-      `INSERT INTO scenic_spots (id, name, type, category, description, popularity, rating, rating_count, city, address, open_time, ticket_price, canvas_width, canvas_height) VALUES ` +
-      `(${profile.areaId}, ${q(profile.name)}, ${q(profile.type)}, ${q(profile.category)}, ${q(profile.description)}, ${profile.popularity}, ${profile.rating}, ${120 + i}, ${q(profile.city)}, ${q(profile.address)}, ${q(profile.openTime)}, ${q(profile.ticket)}, ${CANVAS_W}, ${CANVAS_H});`
+      `INSERT INTO scenic_spots (id, name, type, category, description, popularity, rating, rating_count, image, city, address, open_time, ticket_price, canvas_width, canvas_height) VALUES ` +
+      `(${profile.areaId}, ${q(profile.name)}, ${q(profile.type)}, ${q(profile.category)}, ${q(profile.description)}, ${profile.popularity}, ${profile.rating}, ${120 + i}, ${q(getSpotImage(profile))}, ${q(profile.city)}, ${q(profile.address)}, ${q(profile.openTime)}, ${q(profile.ticket)}, ${CANVAS_W}, ${CANVAS_H});`
     )
 
     const nodes = generateNodeLayout(profile)
@@ -769,7 +814,7 @@ function generateSQL() {
 
     const foods = generateFoods(nodes, profile)
     for (const food of foods) {
-      sql.push(`INSERT INTO foods (id, area_id, name, cuisine, restaurant, rating, rating_count, popularity, node_id, price, description) VALUES (${food.id}, ${food.areaId}, ${q(food.name)}, ${q(food.cuisine)}, ${q(food.restaurant)}, ${food.rating}, ${food.ratingCount}, ${food.popularity}, ${food.nodeId}, ${food.price}, ${q(food.description)});`)
+      sql.push(`INSERT INTO foods (id, area_id, name, cuisine, restaurant, rating, rating_count, popularity, node_id, price, description, image) VALUES (${food.id}, ${food.areaId}, ${q(food.name)}, ${q(food.cuisine)}, ${q(food.restaurant)}, ${food.rating}, ${food.ratingCount}, ${food.popularity}, ${food.nodeId}, ${food.price}, ${q(food.description)}, ${q(food.image)});`)
     }
     allStats.foods += foods.length
 

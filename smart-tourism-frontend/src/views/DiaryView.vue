@@ -111,12 +111,13 @@
         class="card overflow-hidden cursor-pointer group"
         @click="showDiaryDetail(d.id)"
       >
-        <div class="h-36 relative overflow-hidden">
+        <div class="h-36 relative overflow-hidden diary-cover">
           <img
             v-if="d.images?.length"
             :src="d.images[0]"
             :alt="d.title"
             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+            @error="hideBrokenImage"
           />
           <div v-else class="w-full h-full flex items-center justify-center"
                style="background: linear-gradient(135deg, #e8f5e9, #f1f8e9)">
@@ -434,7 +435,7 @@
         <!-- 图片 -->
         <div v-if="currentDiary.images?.length" class="flex gap-2 overflow-x-auto mb-4">
           <img v-for="(img, i) in currentDiary.images" :key="i" :src="img"
-               class="w-32 h-24 rounded-lg object-cover shrink-0" />
+               class="w-32 h-24 rounded-lg object-cover shrink-0" @error="hideBrokenImage" />
         </div>
 
         <div v-if="currentDiary.videos?.length" class="diary-video-list">
@@ -671,6 +672,10 @@ function parseMediaList(value: unknown): string[] {
   } catch {
     return value.split(/[,\n]/).map(item => item.trim()).filter(Boolean)
   }
+}
+
+function hideBrokenImage(event: Event) {
+  ;(event.currentTarget as HTMLImageElement).style.display = 'none'
 }
 
 function normalizeDiary(item: any): Diary {
@@ -1013,6 +1018,10 @@ onMounted(() => {
 }
 
 .media-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+
+.diary-cover {
+  background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+}
 .media-preview-item button { position: absolute; top: 4px; right: 4px; width: 25px; height: 25px; border-radius: 50%; }
 
 .video-link-list { display: grid; gap: 6px; margin-top: 9px; }

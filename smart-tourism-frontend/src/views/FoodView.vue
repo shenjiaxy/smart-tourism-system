@@ -133,9 +133,14 @@
           @click="selectSearchResult(result)"
         >
           <div class="flex gap-4">
-            <div class="w-20 h-20 rounded-xl shrink-0 flex items-center justify-center text-3xl"
-                 style="background: linear-gradient(135deg, #fff3e0, #ffe0b2)">
-              {{ getFoodEmoji(result.name) }}
+            <div class="food-thumb w-20 h-20">
+              <span>{{ getFoodEmoji(result.name) }}</span>
+              <img
+                v-if="result.food && foodImage(result.food)"
+                :src="foodImage(result.food)"
+                :alt="result.name"
+                @error="hideBrokenImage"
+              />
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
@@ -205,6 +210,15 @@
                    color: idx < 3 ? 'white' : 'var(--color-primary)',
                  }">
               {{ idx + 1 }}
+            </div>
+            <div class="food-thumb w-20 h-20">
+              <span>{{ getFoodEmoji(food.name) }}</span>
+              <img
+                v-if="foodImage(food)"
+                :src="foodImage(food)"
+                :alt="food.name"
+                @error="hideBrokenImage"
+              />
             </div>
             <div class="flex-1 min-w-0">
               <h4 class="text-sm font-semibold truncate mb-1" style="color: var(--color-text-primary)">
@@ -287,6 +301,14 @@ function getFoodEmoji(name: string): string {
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) % emojis.length
   return emojis[Math.abs(hash)]
+}
+
+function foodImage(food: Partial<Food>): string {
+  return food.image_url || food.image || ''
+}
+
+function hideBrokenImage(event: Event) {
+  ;(event.currentTarget as HTMLImageElement).style.display = 'none'
 }
 
 function similarityColor(sim: number): string {
@@ -445,5 +467,24 @@ onMounted(() => {
 .cuisine-default:hover {
   border-color: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+.food-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff3e0;
+  font-size: 28px;
+}
+
+.food-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 </style>

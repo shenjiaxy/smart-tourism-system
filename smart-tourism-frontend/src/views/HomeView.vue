@@ -61,7 +61,14 @@
           :class="{ 'destination-card--large': index === 0 }"
           :style="{ '--visual-bg': getSpotVisual(spot, index).background }"
         >
-          <div class="destination-image"></div>
+          <div class="destination-image">
+            <img
+              v-if="spot.image_url || spot.image"
+              :src="spot.image_url || spot.image"
+              :alt="spot.name"
+              @error="hideBrokenImage"
+            />
+          </div>
           <div class="destination-content">
             <span>{{ spot.city }} / {{ spot.category || spot.type }}</span>
             <h3>{{ spot.name }}</h3>
@@ -84,6 +91,10 @@ const overview = ref<OverviewData | null>(null)
 const spots = ref<Spot[]>([])
 
 const featuredSpots = computed(() => spots.value.slice(0, 4))
+
+function hideBrokenImage(event: Event) {
+  ;(event.currentTarget as HTMLImageElement).style.display = 'none'
+}
 
 onMounted(async () => {
   try {
@@ -295,10 +306,20 @@ onMounted(async () => {
 .destination-image {
   position: absolute;
   inset: 0;
+}
+
+.destination-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.destination-image::after {
+  position: absolute;
+  inset: 0;
+  content: "";
   background:
-    radial-gradient(circle at 22% 20%, rgba(255, 253, 247, 0.24), transparent 12%),
     linear-gradient(0deg, rgba(0, 0, 0, 0.72), transparent 62%);
-  mix-blend-mode: screen;
 }
 
 .destination-content {
