@@ -85,7 +85,9 @@ void HttpServer::setup_cors() {
                 return httplib::Server::HandlerResponse::Handled;
             }
 
-            if (req.path.rfind("/api/admin", 0) == 0 &&
+            const bool admin_only = req.path.rfind("/api/admin", 0) == 0 ||
+                                    req.path == "/api/stats/overview";
+            if (admin_only &&
                 !service::AuthService::is_admin(*user)) {
                 set_json(res, Response::error(403, "Administrator access required"), 403);
                 return httplib::Server::HandlerResponse::Handled;
@@ -686,6 +688,11 @@ void HttpServer::register_diary_routes() {
     server_.Post("/api/diaries/compress", [](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
+            const int diary_id = body.value("diary_id", 0);
+            if (!can_manage_diary(req, diary_id)) {
+                set_json(res, Response::error(403, "You can only compress your own diary"), 403);
+                return;
+            }
             json result = service::DiaryService::compress_diary(body);
             json resp;
             if (result.contains("error")) {

@@ -43,7 +43,6 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  BarChart3,
   Coffee,
   Compass,
   Edit,
@@ -68,7 +67,6 @@ const initial = computed(() => {
 
 const navItems = [
   { path: '/', label: '首页', icon: Home },
-  { path: '/overview', label: '数据概览', icon: BarChart3 },
   { path: '/recommend', label: '旅游推荐', icon: Compass },
   { path: '/map', label: '路线规划', icon: Map },
   { path: '/facility', label: '场所查询', icon: Search },

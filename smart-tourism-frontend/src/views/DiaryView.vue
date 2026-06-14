@@ -454,7 +454,7 @@
         <!-- 操作按钮 -->
         <div class="flex gap-2 pt-4 border-t" style="border-color: var(--color-primary-lightest)">
           <button
-            v-if="currentDiary.user_id === auth.user?.id || auth.isAdmin"
+            v-if="canManageCurrentDiary"
             class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all"
             style="background: #F3E5F5; color: #7B1FA2"
             @click="handleCompress"
@@ -480,7 +480,7 @@
             Huffman 解压
           </button>
           <button
-            v-if="currentDiary.user_id === auth.user?.id || auth.isAdmin"
+            v-if="canManageCurrentDiary"
             class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all"
             style="background: var(--color-primary-bg); color: var(--color-primary)"
             @click="openEditDialog(currentDiary)"
@@ -488,6 +488,7 @@
             编辑
           </button>
           <button
+            v-if="canManageCurrentDiary"
             class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all"
             style="background: #FFEBEE; color: #C62828"
             @click="handleDelete(currentDiary.id)"
@@ -509,7 +510,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Plus, Sparkles, Upload, Video, X } from 'lucide-vue-next'
 import {
@@ -538,6 +539,10 @@ const createDialogVisible = ref(false)
 const detailDialogVisible = ref(false)
 const editingDiary = ref<Diary | null>(null)
 const currentDiary = ref<Diary | null>(null)
+const canManageCurrentDiary = computed(() => Boolean(
+  currentDiary.value &&
+  (auth.isAdmin || currentDiary.value.user_id === auth.user?.id),
+))
 const userRating = ref(0)
 const savingDiary = ref(false)
 const imageFileInput = ref<HTMLInputElement | null>(null)
@@ -761,6 +766,10 @@ function openCreateDialog() {
 }
 
 function openEditDialog(diary: Diary) {
+  if (!auth.isAdmin && diary.user_id !== auth.user?.id) {
+    ElMessage.error('只能编辑自己的日记')
+    return
+  }
   detailDialogVisible.value = false
   editingDiary.value = diary
   diaryForm.title = diary.title
@@ -902,6 +911,10 @@ async function showDiaryDetail(id: number) {
 }
 
 async function handleDelete(id: number) {
+  if (!canManageCurrentDiary.value || currentDiary.value?.id !== id) {
+    ElMessage.error('只能删除自己的日记')
+    return
+  }
   try {
     await ElMessageBox.confirm('确定要删除这篇日记吗？', '删除确认', {
       confirmButtonText: '删除',
@@ -933,7 +946,10 @@ async function handleRate() {
 }
 
 async function handleCompress() {
-  if (!currentDiary.value) return
+  if (!currentDiary.value || !canManageCurrentDiary.value) {
+    ElMessage.error('只能压缩自己的日记')
+    return
+  }
   try {
     const res = await compressDiary({ diary_id: currentDiary.value.id })
     compressResult.value = res.data

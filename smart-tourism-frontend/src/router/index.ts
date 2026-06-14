@@ -24,7 +24,7 @@ const routes: RouteRecordRaw[] = [
     path: '/overview',
     name: 'Overview',
     component: () => import('@/views/OverviewView.vue'),
-    meta: { ...userMeta, title: '数据概览' },
+    meta: { ...userMeta, title: '数据概览', adminOnly: true },
   },
   {
     path: '/recommend',

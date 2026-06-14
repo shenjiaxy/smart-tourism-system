@@ -17,19 +17,19 @@
         </div>
       </div>
       <aside class="hero-card">
-        <span>Live data</span>
-        <strong>{{ overview?.stats.scenic_spots ?? 225 }}</strong>
-        <small>景区与校园</small>
+        <span>Route modes</span>
+        <strong>4</strong>
+        <small>路线规划策略</small>
         <div class="mini-rule"></div>
-        <p>{{ overview?.stats.roads ?? 5040 }} 条路网边，{{ overview?.stats.nodes ?? 4200 }} 个空间节点。</p>
+        <p>最短距离、最短时间、混合交通与室内导航。</p>
       </aside>
     </section>
 
     <section class="feature-strip">
-      <router-link to="/overview" class="strip-item">
+      <router-link to="/facility" class="strip-item">
         <span>01</span>
-        <strong>数据可信度</strong>
-        <small>规模指标、路网和数据库连接状态</small>
+        <strong>附近场所</strong>
+        <small>按实际路径距离查找周边服务设施</small>
       </router-link>
       <router-link to="/recommend" class="strip-item">
         <span>02</span>
@@ -82,12 +82,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getOverviewStats, type OverviewData } from '@/api/stats'
 import { getSpotList } from '@/api/spot'
 import type { Spot } from '@/types'
 import { getSpotVisual } from '@/utils/visualAssets'
 
-const overview = ref<OverviewData | null>(null)
 const spots = ref<Spot[]>([])
 
 const featuredSpots = computed(() => spots.value.slice(0, 4))
@@ -98,11 +96,7 @@ function hideBrokenImage(event: Event) {
 
 onMounted(async () => {
   try {
-    const [overviewRes, spotsRes] = await Promise.all([
-      getOverviewStats(),
-      getSpotList({ page: 1, page_size: 4, sort_by: 'popularity', order: 'desc' }),
-    ])
-    overview.value = overviewRes.data
+    const spotsRes = await getSpotList({ page: 1, page_size: 4, sort_by: 'popularity', order: 'desc' })
     const data = spotsRes.data as any
     spots.value = data?.items || data || []
   } catch (error) {

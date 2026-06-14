@@ -789,6 +789,38 @@ void test_auth_service() {
         ASSERT(!service::AuthService::find_session(result.token).has_value());
         PASS();
     }
+
+    TEST("different users receive independent session tokens");
+    {
+        auto user = service::AuthService::login("zhangsan", "pass123");
+        auto admin = service::AuthService::login("admin", "pass123");
+        ASSERT(user.success);
+        ASSERT(admin.success);
+        ASSERT(user.token != admin.token);
+        auto current_user = service::AuthService::find_session(user.token);
+        auto current_admin = service::AuthService::find_session(admin.token);
+        ASSERT(current_user.has_value());
+        ASSERT(current_admin.has_value());
+        ASSERT_EQ(current_user->role, "user");
+        ASSERT_EQ(current_admin->role, "admin");
+        service::AuthService::logout(user.token);
+        service::AuthService::logout(admin.token);
+        PASS();
+    }
+
+    TEST("session reflects current database role");
+    {
+        auto result = service::AuthService::login("admin", "pass123");
+        ASSERT(result.success);
+        ASSERT(service::AdminService::update_user_role(result.user.id, "user"));
+        auto current = service::AuthService::find_session(result.token);
+        const bool restored = service::AdminService::update_user_role(result.user.id, "admin");
+        service::AuthService::logout(result.token);
+        ASSERT(restored);
+        ASSERT(current.has_value());
+        ASSERT_EQ(current->role, "user");
+        PASS();
+    }
 }
 
 void test_admin_service() {
