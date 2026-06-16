@@ -416,19 +416,28 @@ public:
 
             // 计算压缩率
             double ratio = algorithm::Huffman::compression_ratio(original_size, compressed_size);
+            bool stored = compressed_size < original_size;
 
             // 存入数据库（如果指定了 diary_id）
             if (body.contains("diary_id") && body["diary_id"].is_number()) {
                 int diary_id = body["diary_id"].get<int>();
-                repository::DiaryRepo::save_compressed(diary_id, base64);
+                if (stored) {
+                    repository::DiaryRepo::save_compressed(diary_id, base64);
+                } else {
+                    repository::DiaryRepo::clear_compressed(diary_id);
+                }
             }
 
             result["success"] = true;
             result["original_size"] = original_size;
-            result["compressed_size"] = compressed_size;
-            result["compression_ratio"] = ratio;
-            result["space_saved_percent"] = (1.0 - ratio) * 100.0;
-            result["base64_length"] = static_cast<int>(base64.size());
+            result["compressed_size"] = stored ? compressed_size : original_size;
+            result["compression_ratio"] = stored ? ratio : 1.0;
+            result["space_saved_percent"] = stored ? (1.0 - ratio) * 100.0 : 0.0;
+            result["base64_length"] = stored ? static_cast<int>(base64.size()) : 0;
+            result["stored"] = stored;
+            if (!stored) {
+                result["note"] = "Huffman output is not smaller, original text kept";
+            }
 
             delete[] compressed;
         } catch (const std::exception& e) {

@@ -662,9 +662,11 @@ void test_huffman() {
 
     TEST("压缩和解压（完整流程）");
     {
-        string text = "The quick brown fox jumps over the lazy dog. "
-                      "This is a test of Huffman compression algorithm. "
-                      "Data structures are fundamental to computer science.";
+        string text;
+        for (int i = 0; i < 20; i++) {
+            text += "Huffman compression works well for repeated diary phrases. ";
+            text += "Repeated scenic notes repeated scenic notes repeated scenic notes. ";
+        }
 
         const unsigned char* data = reinterpret_cast<const unsigned char*>(text.c_str());
         int len = static_cast<int>(text.size());
@@ -682,6 +684,31 @@ void test_huffman() {
 
         double ratio = Huffman::compression_ratio(len, comp_size);
         cout << "(ratio=" << ratio << ") ";
+
+        delete[] compressed;
+        delete[] decompressed;
+        PASS();
+    }
+
+    TEST("Huffman repeated diary text should shrink");
+    {
+        string text(500, 'a');
+        text += string(300, 'b');
+        text += string(200, 'c');
+
+        const unsigned char* data = reinterpret_cast<const unsigned char*>(text.c_str());
+        int len = static_cast<int>(text.size());
+
+        unsigned char* compressed = nullptr;
+        int comp_size = Huffman::compress(data, len, &compressed);
+        ASSERT(comp_size > 0);
+        ASSERT(comp_size < len);
+
+        unsigned char* decompressed = nullptr;
+        int decomp_size = Huffman::decompress(compressed, comp_size, &decompressed);
+        ASSERT_EQ(decomp_size, len);
+        string result(reinterpret_cast<char*>(decompressed), decomp_size);
+        ASSERT_EQ(result, text);
 
         delete[] compressed;
         delete[] decompressed;
@@ -871,6 +898,18 @@ void test_diary_service() {
         int diary_id = result.value("id", 0);
         ASSERT(diary_id > 0);
         ASSERT(service::DiaryService::delete_diary(diary_id).value("success", false));
+        PASS();
+    }
+
+    TEST("compression service does not expand short diary text");
+    {
+        const string content = "short note";
+        json body = {{"content", content}};
+        auto result = service::DiaryService::compress_diary(body);
+        ASSERT(result.value("success", false));
+        ASSERT_EQ(result.value("original_size", 0), static_cast<int>(content.size()));
+        ASSERT(result.value("compressed_size", 0) <= static_cast<int>(content.size()));
+        ASSERT(!result.value("stored", true));
         PASS();
     }
 }

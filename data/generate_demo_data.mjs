@@ -15,7 +15,7 @@ const CANVAS_H = 700
 const METERS_PER_UNIT = 1.2
 const NODES_MIN = 35
 const NODES_MAX = 50
-const ROADS_MIN = 45
+const ROADS_MIN = 200
 
 // ID counters
 let nextRoadId = 100000
@@ -114,6 +114,11 @@ const campusThemes = [
   '财经大学', '外国语大学', '艺术学院', '邮电大学', '农业大学',
 ]
 const categories = ['自然', '历史', '文化', '现代', '综合']
+
+const campusAreaSuffixes = ['主校区', '东校区', '西校区', '南校区', '北校区', '大学城校区', '科创园校区', '滨江校区', '国际校区', '新城校区', '软件园校区', '未来城校区', '研究生院校区', '临湖校区', '综合实验校区', '产学研校区', '海淀校区', '昌平校区', '松江校区', '高新校区']
+const scenicAreaSuffixes = ['中心区', '东区', '西区', '南区', '北区', '核心区', '入口区', '游客服务区', '观景区', '休闲区', '研学区', '慢行区', '夜游区', '亲水区', '综合区', '南入口区', '北入口区', '东入口区', '西入口区']
+const streetNames = ['梧桐路', '玉兰街', '湖畔大道', '书院路', '松风街', '云水巷']
+const streetSections = ['东段', '西段', '南段', '北段', '中段', '湖畔段']
 
 const spotImages = {
   campus: '/images/demo/spot-campus.webp',
@@ -329,15 +334,21 @@ function makeAreaProfile(i) {
   const theme = isCampus ? campusThemes[themeIdx] : scenicThemes[themeIdx]
   const category = categories[genIdx % categories.length]
   const city = cities[genIdx % cities.length]
-  const name = `${city}${theme}${String(genIdx + 1).padStart(3, '0')}`
+  const suffixPool = isCampus ? campusAreaSuffixes : scenicAreaSuffixes
+  const suffixIndex = isCampus
+    ? Math.floor(genIdx / 5) + Math.floor(genIdx / 60) * 7
+    : genIdx + Math.floor(genIdx / 60) * 7
+  const areaSuffix = suffixPool[suffixIndex % suffixPool.length]
+  const name = `${city}${theme}${areaSuffix}`
+  const address = `${city}市${streetNames[genIdx % streetNames.length]}${streetSections[Math.floor(genIdx / streetNames.length) % streetSections.length]}`
   const nodeCount = randInt(genId * 100 + 1, NODES_MIN, NODES_MAX)
   const popularity = 3000 + ((genIdx * 7919) % 47000)
   const rating = (3.6 + ((genIdx * 37) % 14) / 10).toFixed(1)
 
   return {
     areaId: genId, name, type, theme, category, city, nodeCount, popularity, rating,
-    address: `${city}市示范路${genIdx + 1}号`,
-    description: `${name}，${city}知名${type === 'campus' ? '高校' : '景区'}，环境优美，设施完善。`,
+    address,
+    description: `${name}，${city}知名${type === 'campus' ? '高校校区' : '旅游片区'}，环境优美，设施完善。`,
     ticket: type === 'campus' ? '免费' : `${10 + (genIdx % 9) * 5}元`,
     openTime: '08:00-18:00',
   }
@@ -497,13 +508,17 @@ function generateRoads(nodes, profile) {
     if (near.length > 0 && near[0].d < 300) addEdge(ent.idx, near[0].node.idx)
   }
 
-  // Ensure minimum road count by adding more cross-links
-  let attempts = 0
-  while (roads.length < ROADS_MIN && attempts < 200) {
-    const a = nodes[Math.floor(seededRandom(areaId * 999 + attempts) * nodes.length)]
-    const b = nodes[Math.floor(seededRandom(areaId * 999 + attempts + 100) * nodes.length)]
-    if (a && b && a.idx !== b.idx && dist(a, b) < 200) addEdge(a.idx, b.idx)
-    attempts++
+  // Ensure every area's graph is dense enough for route-planning demos.
+  const candidates = []
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      candidates.push({ a: nodes[i], b: nodes[j], d: dist(nodes[i], nodes[j]) })
+    }
+  }
+  candidates.sort((left, right) => left.d - right.d)
+  for (const candidate of candidates) {
+    if (roads.length >= ROADS_MIN) break
+    addEdge(candidate.a.idx, candidate.b.idx)
   }
 
   // BFS connectivity check - add bridge edges if disconnected

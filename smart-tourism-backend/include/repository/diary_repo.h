@@ -247,6 +247,16 @@ public:
         return db.execute(sql.str());
     }
 
+    static bool clear_compressed(int id) {
+        auto& db = Database::get();
+        std::ostringstream sql;
+        sql << "UPDATE diaries SET compressed_content = '', "
+            << "is_compressed = 0, "
+            << "updated_at = datetime('now', 'localtime') "
+            << "WHERE id = " << id;
+        return db.execute(sql.str());
+    }
+
     /**
      * 获取压缩后的内容
      * @param id 日记ID
